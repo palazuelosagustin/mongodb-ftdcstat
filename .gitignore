@@ -6,3 +6,4 @@ compact_all.out
 verbose_all.out
 serverStatus.out
 replSetGetStatus
+outputs/

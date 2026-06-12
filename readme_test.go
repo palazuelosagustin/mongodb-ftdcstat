@@ -34,7 +34,8 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"sample time in UTC for FTDC sample rows",
 		"normalized by the available CPU count",
 		"delta(opLatencies.<type>.latency) / delta(opLatencies.<type>.ops) / 1000000",
-		"`--view repl` renders the `replication` section followed by a compact `repl`",
+		"`--view repl` is a compatibility alias that renders only the `replication`",
+		"`replication.majLagS` contains the majority commit lag",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("README missing %q", want)

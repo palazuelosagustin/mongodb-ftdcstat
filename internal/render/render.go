@@ -72,9 +72,7 @@ func layoutForView(view string, nodeLabels []string) tableLayout {
 			{Name: "system", Columns: columnsForSection("system")},
 		})
 	case "repl":
-		return buildLayout(replicationColumns(nodeLabels), []namedColumns{
-			{Name: "repl", Columns: columnsForSection("repl")},
-		})
+		return buildLayout(replicationColumns(nodeLabels), nil)
 	case "all":
 		return buildLayout(replicationColumns(nodeLabels), []namedColumns{
 			{Name: "server", Columns: columnsForSection("server")},

@@ -107,7 +107,8 @@ Prints JSON instead of terminal tables. JSON includes selected metadata,
 warnings, selected view, derived rows, and an `rsInfo.members` mapping from
 generic replica-set node labels to real member names. Each row includes grouped
 section objects such as `replication` and `server`; `replication.lagS` contains
-the per-node lag values and unavailable lag values are `null`.
+the per-node lag values, `replication.majLagS` contains the majority commit lag,
+and unavailable lag values are `null`.
 
 ## Header
 
@@ -189,12 +190,17 @@ lagS     replication header label; the following node columns are lag values in 
 node1    replication lag for rsInfo node1 in seconds, derived
 node2    replication lag for rsInfo node2 in seconds, derived
 nodeN    replication lag for rsInfo nodeN in seconds, derived
+majLagS   majority commit lag in seconds, derived
 ```
 
 Table column names are always generic `node1..nodeN` labels, never replica-set
 hostnames. The real member names are listed in the `rsInfo` header. The leading
 `lagS` header marks the node columns as lag values in seconds and is not
 repeated as a data literal on each row.
+
+`majLagS` is the lag between `serverStatus.repl.lastWrite.lastWriteDate` and
+`serverStatus.repl.lastWrite.majorityWriteDate`, in seconds. It appears after
+the per-node lag columns in `--view all`, `--view server`, and `--view repl`.
 
 Lag is calculated per row from that timestamp's `replSetGetStatus` data:
 
@@ -297,13 +303,10 @@ Missing fields render as `-` in terminal output and `null` in JSON.
 
 ### `repl` View
 
-```text
-majLagS   majority commit lag in seconds, derived
-```
-
-`--view repl` renders the `replication` section followed by a compact `repl`
-section containing `majLagS`. `rsState` is not part of the `repl` section; it
-remains in the `server` section.
+`--view repl` is a compatibility alias that renders only the `replication`
+section, including per-node lag columns and `majLagS`. It does not render
+`server`, `system`, or `wiredTiger` columns. `rsState` remains in the `server`
+section when using `--view server` or `--view all`.
 
 ## Numeric Formatting
 

@@ -21,7 +21,7 @@ var metricRegistry = []metricDefinition{
 	{Section: "server", Column: "wLatS", Format: "seconds", JSONName: "wLatS"},
 	{Section: "server", Column: "cLatS", Format: "seconds", JSONName: "cLatS"},
 
-	{Section: "repl", Column: "majLagS", Format: "lag", JSONName: "majLagS"},
+	{Section: "replication", Column: "majLagS", Format: "lag", JSONName: "majLagS"},
 
 	{Section: "system", Column: "r/s", Format: "rate", JSONName: "r/s"},
 	{Section: "system", Column: "w/s", Format: "rate", JSONName: "w/s"},
@@ -62,6 +62,7 @@ func columnsForSection(section string) []string {
 func replicationColumns(nodeLabels []string) []string {
 	cols := []string{"lagSLabel"}
 	cols = append(cols, nodeLabels...)
+	cols = append(cols, "majLagS")
 	return cols
 }
 

@@ -3,6 +3,8 @@ package render
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -297,8 +299,8 @@ func TestAllViewIsSingleWideTableAndRepeatsHeader(t *testing.T) {
 			t.Fatalf("server section should not include old latency column %q:\n%s", old, out)
 		}
 	}
-	if !strings.Contains(headerLine, "datetime") || !strings.Contains(headerLine, "lagS node1 node2") || !strings.Contains(headerLine, "rsState conn qTot") {
-		t.Fatalf("replication should include lagS and server should start with rsState:\n%s", out)
+	if !strings.Contains(headerLine, "datetime") || !strings.Contains(headerLine, "lagS node1 node2 majLagS") || !strings.Contains(headerLine, "rsState conn qTot") {
+		t.Fatalf("replication should include lagS, node lags, majLagS and server should start with rsState:\n%s", out)
 	}
 	if !strings.Contains(out, "PRIMARY") {
 		t.Fatalf("output should keep per-row rsState values:\n%s", out)
@@ -335,23 +337,38 @@ func TestReplicationLagSIsHeaderOnlyNotRepeatedPerRow(t *testing.T) {
 	}
 }
 
-func TestReplViewIncludesReplicationAndReplSections(t *testing.T) {
+func TestReplViewRendersSingleReplicationSection(t *testing.T) {
 	var buf bytes.Buffer
 	if err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{View: "repl"}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	labelLine, headerLine := firstTableHeader(out)
-	replicationIdx := strings.Index(labelLine, "replication")
-	replIdx := strings.LastIndex(labelLine, "repl")
-	if replicationIdx < 0 || replIdx < 0 || replIdx <= replicationIdx {
-		t.Fatalf("repl view should label replication before repl:\n%s", out)
+	if strings.Contains(out, " rsState") || strings.Contains(out, "rsState conn") {
+		t.Fatalf("repl view should not include server columns:\n%s", out)
 	}
-	if strings.Count(labelLine, "|") != 2 || !strings.Contains(headerLine, "datetime") || !strings.Contains(headerLine, "lagS node1 node2") || !strings.Contains(headerLine, "majLagS") {
-		t.Fatalf("repl view should render datetime | replication | repl:\n%s", out)
+	lines := strings.Split(out, "\n")
+	var headerLine string
+	for _, line := range lines {
+		if strings.Contains(line, "datetime") {
+			headerLine = line
+			break
+		}
 	}
-	if strings.Contains(headerLine, "rsState") {
-		t.Fatalf("repl view should not include rsState in the repl section:\n%s", out)
+	if headerLine == "" {
+		t.Fatalf("repl view missing column header:\n%s", out)
+	}
+	if !strings.Contains(headerLine, "lagS node1 node2 majLagS") {
+		t.Fatalf("repl view should render lagS node1 node2 majLagS columns:\n%s", out)
+	}
+	values := replicationDataValues(t, out)
+	if values["majLagS"] != "0.0" {
+		t.Fatalf("repl view majLagS=%q", values["majLagS"])
+	}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "repl" {
+			t.Fatalf("repl view should not render a section named repl:\n%s", out)
+		}
 	}
 }
 
@@ -483,6 +500,99 @@ func TestNumericFormattingByColumnType(t *testing.T) {
 	}
 }
 
+func TestAllAndReplViewsMatchReplicationValues(t *testing.T) {
+	row := testRow(0)
+	delete(row.Values, "node2")
+	var replBuf, allBuf bytes.Buffer
+	if err := Render(&replBuf, testMetadata(), nil, []derive.Row{row}, Options{View: "repl"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Render(&allBuf, testMetadata(), nil, []derive.Row{row}, Options{View: "all"}); err != nil {
+		t.Fatal(err)
+	}
+	replValues := replicationDataValues(t, replBuf.String())
+	allValues := replicationDataValues(t, allBuf.String())
+	if !reflect.DeepEqual(replValues, allValues) {
+		t.Fatalf("replication values mismatch:\nrepl=%#v\nall=%#v", replValues, allValues)
+	}
+}
+
+func replicationDataValues(t *testing.T, out string) map[string]string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "2026-06-04T19:00:00Z") {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 2 {
+			t.Fatalf("expected replication | ... data row:\n%s", out)
+		}
+		fields := strings.Fields(strings.TrimSpace(parts[1]))
+		if len(fields) < 2 {
+			t.Fatalf("expected node lag and majLagS values:\n%s", out)
+		}
+		values := map[string]string{
+			"majLagS": fields[len(fields)-1],
+		}
+		for i, field := range fields[:len(fields)-1] {
+			values[fmt.Sprintf("node%d", i+1)] = field
+		}
+		return values
+	}
+	t.Fatalf("missing data row in output:\n%s", out)
+	return nil
+}
+
+func TestJSONAllViewIncludesMajLagSInReplication(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{View: "all", JSON: true}); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	rows := payload["rows"].([]any)
+	gotRow := rows[0].(map[string]any)
+	replication := gotRow["replication"].(map[string]any)
+	if replication["majLagS"] != float64(0) {
+		t.Fatalf("replication.majLagS=%#v", replication["majLagS"])
+	}
+	if _, ok := gotRow["repl"]; ok {
+		t.Fatalf("all JSON should not contain repl section: %#v", gotRow)
+	}
+	server := gotRow["server"].(map[string]any)
+	if server["rsState"] != "PRIMARY" {
+		t.Fatalf("server.rsState=%#v", server["rsState"])
+	}
+	if _, ok := replication["rsState"]; ok {
+		t.Fatalf("replication should not contain rsState: %#v", replication)
+	}
+}
+
+func TestJSONReplViewUsesReplicationSectionOnly(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{View: "repl", JSON: true}); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	rows := payload["rows"].([]any)
+	gotRow := rows[0].(map[string]any)
+	if _, ok := gotRow["repl"]; ok {
+		t.Fatalf("repl JSON should not contain repl section: %#v", gotRow)
+	}
+	replication := gotRow["replication"].(map[string]any)
+	if replication["majLagS"] != float64(0) {
+		t.Fatalf("replication.majLagS=%#v", replication["majLagS"])
+	}
+	if _, ok := gotRow["server"]; ok {
+		t.Fatalf("repl JSON should not contain server section: %#v", gotRow)
+	}
+}
+
 func TestJSONIncludesRSInfoMappingAndReplicationGroup(t *testing.T) {
 	row := testRow(0)
 	delete(row.Values, "node2")
@@ -511,6 +621,9 @@ func TestJSONIncludesRSInfoMappingAndReplicationGroup(t *testing.T) {
 	}
 	if _, ok := lagS["node2"]; !ok || lagS["node2"] != nil {
 		t.Fatalf("node2 missing lag should be JSON null: %#v", lagS)
+	}
+	if replication["majLagS"] != float64(0) {
+		t.Fatalf("replication.majLagS=%#v", replication["majLagS"])
 	}
 	if _, ok := replication["rsState"]; ok {
 		t.Fatalf("replication should not contain rsState: %#v", replication)
