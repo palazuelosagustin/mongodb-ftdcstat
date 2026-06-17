@@ -104,6 +104,7 @@ func (s *Streamer) Add(cur model.MetricSample) (Row, bool) {
 	fillSummary(&row, calc, reset)
 	fillWT(&row, calc, reset)
 	fillMemoryLatencyConnections(&row, calc, reset)
+	fillNetwork(&row, calc, reset)
 	fillCPU(&row, calc, s.opts, reset)
 	fillDisk(&row, calc, s.opts.Device, reset)
 	fillReplication(&row, calc, s.replMembers, reset)
@@ -294,6 +295,28 @@ func fillMemoryLatencyConnections(row *Row, c calculator, reset bool) {
 	setCurrent(row, "residentMB", c, "serverStatus.mem.resident")
 	setCurrent(row, "virtualMB", c, "serverStatus.mem.virtual")
 	_ = reset
+}
+
+func fillNetwork(row *Row, c calculator, reset bool) {
+	setCurrent(row, "activeConn", c, "serverStatus.connections.active")
+	if current, ok := c.current("serverStatus.connections.current"); ok {
+		if active, ok := c.current("serverStatus.connections.active"); ok {
+			idle := current - active
+			if idle < 0 {
+				idle = 0
+			}
+			row.Values["idleConn"] = idle
+		}
+	}
+	setCurrent(row, "queuedConn", c, "serverStatus.connections.queuedForEstablishment")
+	if reset {
+		return
+	}
+	setRate(row, "totalCreated/s", c, "serverStatus.connections.totalCreated")
+	setRate(row, "rejConn/s", c, "serverStatus.connections.rejected")
+	setRate(row, "dnsSlow/s", c, "serverStatus.network.numSlowDNSOperations")
+	setRate(row, "tlsSlow/s", c, "serverStatus.network.numSlowSSLOperations")
+	setRate(row, "netTimeout/s", c, "serverStatus.metrics.operation.numConnectionNetworkTimeouts")
 }
 
 func fillCPU(row *Row, c calculator, opts Options, reset bool) {

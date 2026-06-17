@@ -12,7 +12,7 @@ go build -o ftdcstat ./cmd/ftdcstat
 ## Usage
 
 ```bash
-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|repl|summary|all] [--interval N] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--verbose] [--pressure]
+ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--verbose] [--pressure]
 ```
 
 The input is a directory, not a single FTDC file. The tool discovers
@@ -25,7 +25,7 @@ them as one chronological capture.
 
 Required. Path to a MongoDB FTDC diagnostic data directory.
 
-### `--view server|wt|system|repl|summary|all`
+### `--view server|wt|system|network|repl|summary|all`
 
 Default: `summary`.
 
@@ -35,8 +35,9 @@ Views:
 server   Replica-set status plus MongoDB serverStatus counters, latency, queues, connections
 wt       WiredTiger cache, eviction, checkpoint, and ticket metrics
 system   CPU, memory, and disk metrics
+network  Connection activity and network-establishment diagnostics
 repl     Replica-set lag and replication state
-summary  One wide table containing replication, server, system, and WiredTiger columns
+summary  One wide table containing replication, server, network, system, and WiredTiger columns
 all      Compatibility alias for summary
 ```
 
@@ -51,11 +52,11 @@ ftdcstat diagnostic.data --view summary | less -S
 It prints one wide table, one row per display interval, and repeats the compact
 section-label row plus the column header every 50 data rows. The wide table uses
 `|` separators after `datetime` and between logical `replication`, `server`,
-`system`, and `wiredTiger` groups. It avoids the old full-width dashed banner
+`network`, `system`, and `wiredTiger` groups. It avoids the old full-width dashed banner
 lines. The `--view summary` section order is:
 
 ```text
-replication | server | system | wiredTiger
+replication | server | network | system | wiredTiger
 ```
 
 ### `--interval N`
@@ -113,9 +114,9 @@ and unavailable lag values are `null`.
 ### `--verbose`
 
 `--verbose` expands columns for focused views only. It applies to `--view repl`,
-`--view wt`, and `--view system`. It does not apply to `--view summary` or
+`--view wt`, `--view system`, and `--view network`. It does not apply to `--view summary` or
 `--view all`, which always print the compact rollup across replication, server,
-system, and WiredTiger.
+network, system, and WiredTiger.
 
 When used with `--view repl`, `--verbose` adds replication apply/buffer metrics
 after `majLagS`:
@@ -136,6 +137,13 @@ rate, and swap activity after the default system columns:
 
 ```text
 r/s w/s rkB/s wkB/s awaitS r_awaitS w_awaitS aqu-sz util% user_cpu% system_cpu% iowait% residentMB virtualMB ctxt/s swapIn/s swapOut/s
+```
+
+When used with `--view network`, `--verbose` appends queued and connection-establishment
+symptom counters after the default network columns:
+
+```text
+activeConn idleConn totalCreated/s queuedConn rejConn/s dnsSlow/s tlsSlow/s netTimeout/s
 ```
 
 Non-verbose output for all views is unchanged.
@@ -164,6 +172,10 @@ WiredTiger paths needed for the extra columns.
 
 For `--view system --verbose`, FTDC path selection adds only the explicit
 verbose system paths needed for `ctxt/s`, `swapIn/s`, and `swapOut/s`.
+
+For `--view network --verbose`, FTDC path selection adds only the explicit
+network-establishment paths needed for `queuedConn`, `rejConn/s`, `dnsSlow/s`,
+`tlsSlow/s`, and `netTimeout/s`.
 
 ### `--pressure`
 
@@ -199,6 +211,7 @@ rsInfo replica set name and node label to host:port mapping
 hostInfo hostname/OS/kernel/libc/CPU topology/memory/pages/THP/versionString
 getCmdLineOpts argv
 configured parameters
+network maxConn metadata for `--view network`
 ```
 
 `buildInfo.perconaFeatures` is deduplicated while preserving first-seen order
@@ -240,6 +253,16 @@ options or config-derived `getCmdLineOpts`, primarily under `setParameter`.
 
 Metadata changes across files are normal in rotated diagnostic directories and
 are not printed as warnings by default.
+
+For `--view network`, the header also includes:
+
+```text
+network
+  maxConn: connections.current + connections.available from the first usable serverStatus sample
+```
+
+If either connection field is unavailable in that first sample, `maxConn` is
+printed as `-`.
 
 ## Column Reference
 
@@ -518,6 +541,50 @@ psi*%        prefer current avg10 from systemMetrics.pressure.<resource>.<scope>
 
 PSI support is Linux-specific and depends on what FTDC captured. When `avg10`
 is present it is used because it is the most useful short-window signal. Older
+
+### `network` View
+
+Default `--view network` columns:
+
+```text
+activeConn      current active connections
+idleConn        current - active, clamped to zero
+totalCreated/s  new connections per second, derived rate
+```
+
+Verbose-only columns for `--view network --verbose`:
+
+```text
+queuedConn    current queued connections during establishment
+rejConn/s     rejected connections per second, derived rate
+dnsSlow/s     slow DNS operations per second, derived rate
+tlsSlow/s     slow TLS/SSL operations per second, derived rate
+netTimeout/s  network timeout events per second, derived rate
+```
+
+Network formulas and sources:
+
+```text
+maxConn         = firstSample.connections.current + firstSample.connections.available
+activeConn      = serverStatus.connections.active
+idleConn        = max(serverStatus.connections.current - serverStatus.connections.active, 0)
+totalCreated/s  = delta(serverStatus.connections.totalCreated) / elapsed seconds
+queuedConn      = serverStatus.connections.queuedForEstablishment
+rejConn/s       = delta(serverStatus.connections.rejected) / elapsed seconds
+dnsSlow/s       = delta(serverStatus.network.numSlowDNSOperations) / elapsed seconds
+tlsSlow/s       = delta(serverStatus.network.numSlowSSLOperations) / elapsed seconds
+netTimeout/s    = delta(serverStatus.metrics.operation.numConnectionNetworkTimeouts) / elapsed seconds
+```
+
+The network view intentionally excludes raw traffic volume, compression ratios,
+request size averages, client disconnects, and ingress admission counters.
+Those values are often hard to interpret without NIC, cloud, container, or OS
+bandwidth context.
+
+The `summary` and `all` views also include the compact network section after
+server metrics, using the same `activeConn`, `idleConn`, and `totalCreated/s`
+columns. The header always includes the `network` section and `maxConn`
+metadata when the first usable `serverStatus` sample has both connection counts.
 MongoDB/PSMDB builds or non-Linux captures may only have `totalMicros` or no
 PSI metrics at all. Missing verbose or pressure metrics render as `-`.
 

@@ -147,7 +147,7 @@ func (m *Metadata) addRecord(record MetadataRecord) {
 }
 
 func trackMetadataHistory(name string) bool {
-	return name == "replSetGetConfig" || name == "replSetGetStatus"
+	return name == "replSetGetConfig" || name == "replSetGetStatus" || name == "serverStatus"
 }
 
 func bestTimestamp(fallback time.Time, doc map[string]any) time.Time {

@@ -96,6 +96,12 @@ func testMetadata() model.Metadata {
 				map[string]any{"name": "h2:27017", "stateStr": "SECONDARY"},
 			},
 		},
+		"serverStatus": map[string]any{
+			"connections": map[string]any{
+				"current":   9,
+				"available": 400,
+			},
+		},
 	})
 	return m
 }
@@ -137,6 +143,9 @@ func TestHeaderOmitsProcessRoleAndPrimary(t *testing.T) {
 	}
 	if !strings.Contains(out, "\nhostInfo\n") || strings.Contains(out, "\nHost\n") {
 		t.Fatalf("host section should be named hostInfo:\n%s", out)
+	}
+	if !strings.Contains(out, "network\n  maxConn: 409\n") {
+		t.Fatalf("header should always include network maxConn:\n%s", out)
 	}
 	for _, want := range []string{
 		"hostname=h1 os=Linux 1 kernel=6.8.0-test libc=2.39 arch=x86_64 cpuAddrSize=64 cores=8 availableCores=7 physicalCores=4 sockets=1 numaNodes=2 numaEnabled=false memoryMB=1024 memLimitMB=2048",
@@ -272,11 +281,11 @@ func TestSummaryViewIsSingleWideTableAndRepeatsHeader(t *testing.T) {
 		t.Fatalf("summary view should use compact section labels, not old banners:\n%s", out)
 	}
 	assertSummaryViewHeaders(t, out, 2)
-	if !strings.Contains(out, "wtCache%") || !strings.Contains(out, "user_cpu%") || !strings.Contains(out, "awaitS") {
+	if !strings.Contains(out, "wtCache%") || !strings.Contains(out, "user_cpu%") || !strings.Contains(out, "awaitS") || !strings.Contains(out, "activeConn") {
 		t.Fatalf("summary view missing grouped columns:\n%s", out)
 	}
 	labelLine, headerLine := firstTableHeader(out)
-	assertSectionOrder(t, labelLine, []string{"replication", "server", "system", "wiredTiger"})
+	assertSectionOrder(t, labelLine, []string{"replication", "server", "network", "system", "wiredTiger"})
 	if !strings.Contains(headerLine, "lagS") || !strings.Contains(headerLine, "node1") || !strings.Contains(headerLine, "node2") {
 		t.Fatalf("replication columns should use generic node labels:\n%s", out)
 	}
@@ -285,6 +294,9 @@ func TestSummaryViewIsSingleWideTableAndRepeatsHeader(t *testing.T) {
 	}
 	if !strings.Contains(headerLine, "rsState conn qTot") {
 		t.Fatalf("server section should start with rsState conn qTot:\n%s", out)
+	}
+	if !strings.Contains(headerLine, "activeConn idleConn totalCreated/s") {
+		t.Fatalf("network section should follow server columns:\n%s", out)
 	}
 	if strings.Contains(headerLine, "node1 node2 rsState") {
 		t.Fatalf("rsState should not be in replication:\n%s", out)
@@ -301,6 +313,9 @@ func TestSummaryViewIsSingleWideTableAndRepeatsHeader(t *testing.T) {
 	}
 	if !strings.Contains(headerLine, "datetime") || !strings.Contains(headerLine, "lagS node1 node2 majLagS") || !strings.Contains(headerLine, "rsState conn qTot") {
 		t.Fatalf("replication should include lagS, node lags, majLagS and server should start with rsState:\n%s", out)
+	}
+	if !strings.Contains(headerLine, "activeConn idleConn totalCreated/s") {
+		t.Fatalf("summary view should include network columns after server:\n%s", out)
 	}
 	if !strings.Contains(out, "PRIMARY") {
 		t.Fatalf("output should keep per-row rsState values:\n%s", out)
@@ -323,6 +338,9 @@ func TestNonVerboseOutputUnchanged(t *testing.T) {
 	}
 	if strings.Contains(summaryHeader, "hbMs") || strings.Contains(summaryHeader, "applyBufMB") {
 		t.Fatalf("non-verbose summary should not include verbose columns:\n%s", summaryPlain.String())
+	}
+	if strings.Contains(summaryHeader, "queuedConn") {
+		t.Fatalf("non-verbose summary should not include verbose network columns:\n%s", summaryPlain.String())
 	}
 }
 
@@ -361,6 +379,20 @@ func TestSummaryViewIgnoresVerboseFlag(t *testing.T) {
 		if strings.Contains(headerLine, col) {
 			t.Fatalf("summary should ignore --verbose and exclude %s:\n%s", col, out)
 		}
+	}
+}
+
+func TestSummaryViewIncludesNetworkSection(t *testing.T) {
+	row := networkRow(0)
+	var buf bytes.Buffer
+	if err := Render(&buf, testMetadata(), nil, []derive.Row{row}, Options{View: "summary"}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	labelLine, headerLine := firstTableHeader(out)
+	assertSectionOrder(t, labelLine, []string{"replication", "server", "network", "system", "wiredTiger"})
+	if !strings.Contains(headerLine, "activeConn idleConn totalCreated/s") {
+		t.Fatalf("summary should include network columns after server:\n%s", out)
 	}
 }
 
@@ -575,6 +607,103 @@ func TestSystemHeaderRepeatsWithVerbosePressureFlags(t *testing.T) {
 		if strings.Contains(out, "----") || strings.Contains(out, "[system]") {
 			t.Fatalf("should not restore old banner separators for %#v:\n%s", opts, out)
 		}
+	}
+}
+
+func TestNetworkViewIncludesHeaderMetadataAndDefaultColumns(t *testing.T) {
+	m := testMetadata()
+	ts := time.Date(2026, 6, 4, 18, 0, 0, 0, time.UTC)
+	m.AddDocument(ts, "serverStatus-early", map[string]any{
+		"serverStatus": map[string]any{
+			"connections": map[string]any{
+				"current":   12,
+				"available": 65524,
+			},
+		},
+	})
+	var buf bytes.Buffer
+	if err := Render(&buf, m, nil, []derive.Row{networkRow(0)}, Options{View: "network"}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "network\n  maxConn: 65536\n") {
+		t.Fatalf("network header metadata missing:\n%s", out)
+	}
+	labelLine, headerLine := firstTableHeader(out)
+	if !strings.Contains(labelLine, "network") {
+		t.Fatalf("network output missing section label:\n%s", out)
+	}
+	headerText := normalizedTableLine(headerLine)
+	if !strings.Contains(headerText, strings.Join(networkColumns(false), " ")) {
+		t.Fatalf("unexpected network header order:\n%s", headerLine)
+	}
+	for _, col := range []string{"queuedConn", "rejConn/s", "dnsSlow/s", "tlsSlow/s", "netTimeout/s"} {
+		if strings.Contains(headerLine, col) {
+			t.Fatalf("default network header should not include %s:\n%s", col, out)
+		}
+	}
+	values := tableRowValues(t, out)
+	for key, want := range map[string]string{
+		"activeConn":     "12",
+		"idleConn":       "184",
+		"totalCreated/s": "0.5",
+	} {
+		if got := values[key]; got != want {
+			t.Fatalf("%s=%q want %q\n%s", key, got, want, out)
+		}
+	}
+}
+
+func TestVerboseNetworkViewIncludesVerboseColumns(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Render(&buf, testMetadata(), nil, []derive.Row{networkRow(0)}, Options{View: "network", Verbose: true}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	_, headerLine := firstTableHeader(out)
+	headerText := normalizedTableLine(headerLine)
+	if !strings.Contains(headerText, strings.Join(networkColumns(true), " ")) {
+		t.Fatalf("unexpected verbose network header order:\n%s", headerLine)
+	}
+	values := tableRowValues(t, out)
+	for key, want := range map[string]string{
+		"queuedConn":   "0",
+		"rejConn/s":    "0.0",
+		"dnsSlow/s":    "0.0",
+		"tlsSlow/s":    "0.0",
+		"netTimeout/s": "0.0",
+	} {
+		if got := values[key]; got != want {
+			t.Fatalf("%s=%q want %q\n%s", key, got, want, out)
+		}
+	}
+}
+
+func TestVerboseNetworkMissingMetricsRenderDash(t *testing.T) {
+	row := derive.Row{
+		Time:   time.Date(2026, 6, 4, 19, 0, 0, 0, time.UTC),
+		Values: map[string]any{"activeConn": float64(5)},
+	}
+	var buf bytes.Buffer
+	if err := Render(&buf, testMetadata(), nil, []derive.Row{row}, Options{View: "network", Verbose: true}); err != nil {
+		t.Fatal(err)
+	}
+	values := tableRowValues(t, buf.String())
+	for _, col := range []string{"idleConn", "totalCreated/s", "queuedConn", "rejConn/s", "dnsSlow/s", "tlsSlow/s", "netTimeout/s"} {
+		if got := values[col]; got != "-" {
+			t.Fatalf("%s=%q want '-'\n%s", col, got, buf.String())
+		}
+	}
+}
+
+func TestNetworkHeaderPrintsDashWhenMaxConnUnavailable(t *testing.T) {
+	m := model.NewMetadata()
+	var buf bytes.Buffer
+	if err := Render(&buf, m, nil, []derive.Row{networkRow(0)}, Options{View: "network"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "network\n  maxConn: -\n") {
+		t.Fatalf("expected maxConn dash:\n%s", buf.String())
 	}
 }
 
@@ -1230,5 +1359,18 @@ func pressureSystemRow(i int) derive.Row {
 	row.Values["psiMemFull%"] = float64(18)
 	row.Values["psiIoSome%"] = float64(19)
 	row.Values["psiIoFull%"] = float64(20)
+	return row
+}
+
+func networkRow(i int) derive.Row {
+	row := testRow(i)
+	row.Values["activeConn"] = float64(12)
+	row.Values["idleConn"] = float64(184)
+	row.Values["totalCreated/s"] = float64(0.5)
+	row.Values["queuedConn"] = float64(0)
+	row.Values["rejConn/s"] = float64(0)
+	row.Values["dnsSlow/s"] = float64(0)
+	row.Values["tlsSlow/s"] = float64(0)
+	row.Values["netTimeout/s"] = float64(0)
 	return row
 }

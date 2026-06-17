@@ -40,6 +40,23 @@ func TestViewNeedsPressureSystem(t *testing.T) {
 	}
 }
 
+func TestViewNeedsVerboseNetwork(t *testing.T) {
+	cases := []struct {
+		view    string
+		verbose bool
+		want    bool
+	}{
+		{"network", true, true},
+		{"system", true, false},
+		{"network", false, false},
+	}
+	for _, tc := range cases {
+		if got := ViewNeedsVerboseNetwork(tc.view, tc.verbose); got != tc.want {
+			t.Fatalf("ViewNeedsVerboseNetwork(%q, %v)=%v want %v", tc.view, tc.verbose, got, tc.want)
+		}
+	}
+}
+
 func TestRequiredPathsForVerboseReplication(t *testing.T) {
 	paths, _ := RequiredPathsFor("repl", true, false)
 	for _, path := range verboseReplicationPaths {
@@ -126,6 +143,27 @@ func TestRequiredPathsForPressureSystem(t *testing.T) {
 	for _, path := range pressureSystemPaths {
 		if summaryPressure[path] {
 			t.Fatalf("summary pressure should not include %q", path)
+		}
+	}
+}
+
+func TestRequiredPathsForVerboseNetwork(t *testing.T) {
+	paths, _ := RequiredPathsFor("network", true, false)
+	for _, path := range verboseNetworkPaths {
+		if !paths[path] {
+			t.Fatalf("expected verbose network path %q", path)
+		}
+	}
+	plain, _ := RequiredPathsFor("network", false, false)
+	for _, path := range verboseNetworkPaths {
+		if plain[path] {
+			t.Fatalf("non-verbose network should not include %q", path)
+		}
+	}
+	summaryVerbose, _ := RequiredPathsFor("summary", true, false)
+	for _, path := range verboseNetworkPaths {
+		if summaryVerbose[path] {
+			t.Fatalf("summary verbose should not include %q", path)
 		}
 	}
 }

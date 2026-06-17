@@ -519,6 +519,89 @@ func TestRowsAverageMemberPingMsMissing(t *testing.T) {
 	}
 }
 
+func TestRowsCalculatesNetworkMetrics(t *testing.T) {
+	rows := Rows([]model.MetricSample{
+		testSample(0, 0, map[string]float64{
+			"serverStatus.connections.current":      20,
+			"serverStatus.connections.active":       8,
+			"serverStatus.connections.totalCreated": 100,
+			"serverStatus.connections.rejected":     5,
+			"serverStatus.network.numSlowDNSOperations": 10,
+			"serverStatus.network.numSlowSSLOperations": 20,
+			"serverStatus.metrics.operation.numConnectionNetworkTimeouts": 30,
+		}),
+		testSample(10, 0, map[string]float64{
+			"serverStatus.connections.current":      21,
+			"serverStatus.connections.active":       9,
+			"serverStatus.connections.totalCreated": 115,
+			"serverStatus.connections.rejected":     7,
+			"serverStatus.connections.queuedForEstablishment": 3,
+			"serverStatus.network.numSlowDNSOperations": 14,
+			"serverStatus.network.numSlowSSLOperations": 25,
+			"serverStatus.metrics.operation.numConnectionNetworkTimeouts": 31,
+		}),
+	}, Options{IntervalSeconds: 1})
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	if got := rows[0].Values["activeConn"]; got != float64(9) {
+		t.Fatalf("activeConn=%v", got)
+	}
+	if got := rows[0].Values["idleConn"]; got != float64(12) {
+		t.Fatalf("idleConn=%v", got)
+	}
+	for key, want := range map[string]float64{
+		"totalCreated/s": 1.5,
+		"queuedConn":     3,
+		"rejConn/s":      0.2,
+		"dnsSlow/s":      0.4,
+		"tlsSlow/s":      0.5,
+		"netTimeout/s":   0.1,
+	} {
+		if got := rows[0].Values[key]; got != want {
+			t.Fatalf("%s=%v want %v", key, got, want)
+		}
+	}
+}
+
+func TestRowsClampsIdleConnectionsToZero(t *testing.T) {
+	rows := Rows([]model.MetricSample{
+		testSample(0, 0, map[string]float64{}),
+		testSample(10, 0, map[string]float64{
+			"serverStatus.connections.current": 5,
+			"serverStatus.connections.active":  7,
+		}),
+	}, Options{IntervalSeconds: 1})
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	if got := rows[0].Values["idleConn"]; got != float64(0) {
+		t.Fatalf("idleConn=%v", got)
+	}
+}
+
+func TestRowsResetsNetworkRatesAcrossGapAndRestart(t *testing.T) {
+	rows := Rows([]model.MetricSample{
+		testSample(0, 0, map[string]float64{
+			"serverStatus.uptime":                  100,
+			"serverStatus.connections.totalCreated": 100,
+		}),
+		testSample(120, 0, map[string]float64{
+			"serverStatus.uptime":                  1,
+			"serverStatus.connections.totalCreated": 110,
+		}),
+	}, Options{IntervalSeconds: 1, GapThreshold: 60 * time.Second})
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	if rows[0].Marker == "" || rows[0].ProcessMarker == "" {
+		t.Fatalf("expected gap and restart markers: %#v", rows[0])
+	}
+	if _, ok := rows[0].Values["totalCreated/s"]; ok {
+		t.Fatal("totalCreated/s should be reset across gap/restart")
+	}
+}
+
 func TestRowsApplyBufferGauges(t *testing.T) {
 	rows := Rows([]model.MetricSample{
 		testSample(0, 0, map[string]float64{}),

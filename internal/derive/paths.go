@@ -26,6 +26,10 @@ func ViewNeedsVerboseSystem(view string, verbose bool) bool {
 	return verbose && view == "system"
 }
 
+func ViewNeedsVerboseNetwork(view string, verbose bool) bool {
+	return verbose && view == "network"
+}
+
 func ViewNeedsPressureSystem(view string, pressure bool) bool {
 	return pressure && view == "system"
 }
@@ -47,6 +51,11 @@ func RequiredPathsFor(view string, verbose, pressure bool) (map[string]bool, []s
 	}
 	if ViewNeedsVerboseSystem(view, verbose) {
 		for _, path := range verboseSystemPaths {
+			paths[path] = true
+		}
+	}
+	if ViewNeedsVerboseNetwork(view, verbose) {
+		for _, path := range verboseNetworkPaths {
 			paths[path] = true
 		}
 	}
@@ -114,6 +123,14 @@ var verboseSystemPaths = []string{
 	"systemMetrics.vmstat.pswpout",
 }
 
+var verboseNetworkPaths = []string{
+	"serverStatus.connections.queuedForEstablishment",
+	"serverStatus.connections.rejected",
+	"serverStatus.network.numSlowDNSOperations",
+	"serverStatus.network.numSlowSSLOperations",
+	"serverStatus.metrics.operation.numConnectionNetworkTimeouts",
+}
+
 var pressureSystemPaths = []string{
 	"systemMetrics.pressure.cpu.some.avg10",
 	"systemMetrics.pressure.cpu.some.avg60",
@@ -155,6 +172,9 @@ var exactRequiredPaths = []string{
 	"serverStatus.extra_info.system_time_us",
 	"serverStatus.extra_info.user_time_us",
 	"serverStatus.connections.current",
+	"serverStatus.connections.available",
+	"serverStatus.connections.active",
+	"serverStatus.connections.totalCreated",
 	"serverStatus.opcounters.insert",
 	"serverStatus.opcounters.query",
 	"serverStatus.opcounters.update",

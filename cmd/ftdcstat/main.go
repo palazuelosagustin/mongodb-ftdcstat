@@ -186,15 +186,15 @@ func parseArgs(args []string) (cliOptions, error) {
 		opts.View = "summary"
 	}
 	switch opts.View {
-	case "server", "wt", "system", "repl", "summary":
+	case "server", "wt", "system", "network", "repl", "summary":
 	default:
-		return opts, errors.New("--view must be one of server, wt, system, repl, summary, all")
+		return opts, errors.New("--view must be one of server, wt, system, network, repl, summary, all")
 	}
 	if opts.Pressure && opts.View != "system" {
 		return opts, errors.New("--pressure is only supported for --view system")
 	}
-	if opts.Verbose && opts.View != "repl" && opts.View != "wt" && opts.View != "system" {
-		return opts, errors.New("--verbose is only supported for --view repl, wt, or system")
+	if opts.Verbose && opts.View != "repl" && opts.View != "wt" && opts.View != "system" && opts.View != "network" {
+		return opts, errors.New("--verbose is only supported for --view repl, wt, system, or network")
 	}
 	return opts, nil
 }
@@ -214,7 +214,7 @@ func parseTimeArg(value string) (time.Time, error) {
 }
 
 func usage(w *os.File) {
-	fmt.Fprintln(w, "usage: ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|repl|summary|all] [--interval N] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--verbose] [--pressure]")
+	fmt.Fprintln(w, "usage: ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--verbose] [--pressure]")
 }
 
 func max(a, b int) int {

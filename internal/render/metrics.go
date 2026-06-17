@@ -52,6 +52,15 @@ var metricRegistry = []metricDefinition{
 	{Section: "system", Column: "psiIoSome%", Format: "percent", JSONName: "psiIoSome%", PressureOnly: true},
 	{Section: "system", Column: "psiIoFull%", Format: "percent", JSONName: "psiIoFull%", PressureOnly: true},
 
+	{Section: "network", Column: "activeConn", Format: "integer", JSONName: "activeConn"},
+	{Section: "network", Column: "idleConn", Format: "integer", JSONName: "idleConn"},
+	{Section: "network", Column: "totalCreated/s", Format: "rate", JSONName: "totalCreated/s"},
+	{Section: "network", Column: "queuedConn", Format: "integer", JSONName: "queuedConn", VerboseOnly: true},
+	{Section: "network", Column: "rejConn/s", Format: "rate", JSONName: "rejConn/s", VerboseOnly: true},
+	{Section: "network", Column: "dnsSlow/s", Format: "rate", JSONName: "dnsSlow/s", VerboseOnly: true},
+	{Section: "network", Column: "tlsSlow/s", Format: "rate", JSONName: "tlsSlow/s", VerboseOnly: true},
+	{Section: "network", Column: "netTimeout/s", Format: "rate", JSONName: "netTimeout/s", VerboseOnly: true},
+
 	{Section: "wiredTiger", Column: "wtCache%", Format: "percent", JSONName: "wtCache%"},
 	{Section: "wiredTiger", Column: "dirty%", Format: "percent", JSONName: "dirty%"},
 	{Section: "wiredTiger", Column: "cacheMB", Format: "integer", JSONName: "cacheMB", VerboseOnly: true},
@@ -112,6 +121,14 @@ func pressureColumns() []string {
 	return []string{
 		"psiCpuSome%", "psiMemSome%", "psiMemFull%", "psiIoSome%", "psiIoFull%",
 	}
+}
+
+func networkColumns(verbose bool) []string {
+	cols := []string{"activeConn", "idleConn", "totalCreated/s"}
+	if verbose {
+		cols = append(cols, "queuedConn", "rejConn/s", "dnsSlow/s", "tlsSlow/s", "netTimeout/s")
+	}
+	return cols
 }
 
 func replicationColumns(nodeLabels []string, verbose bool) []string {

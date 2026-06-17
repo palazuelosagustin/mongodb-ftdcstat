@@ -58,6 +58,26 @@ func TestParseArgsVerbose(t *testing.T) {
 	}
 }
 
+func TestParseArgsNetworkViewAccepted(t *testing.T) {
+	opts, err := parseArgs([]string{"diagnostic.data", "--view", "network"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.View != "network" {
+		t.Fatalf("view=%s", opts.View)
+	}
+}
+
+func TestParseArgsNetworkVerbose(t *testing.T) {
+	opts, err := parseArgs([]string{"diagnostic.data", "--view", "network", "--verbose"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.Verbose || opts.View != "network" {
+		t.Fatalf("view=%s verbose=%v", opts.View, opts.Verbose)
+	}
+}
+
 func TestParseArgsPressure(t *testing.T) {
 	opts, err := parseArgs([]string{"diagnostic.data", "--view", "system", "--pressure"})
 	if err != nil {
@@ -87,7 +107,7 @@ func TestParseArgsPressureRequiresSystemView(t *testing.T) {
 
 func TestParseArgsVerboseRequiresFocusedView(t *testing.T) {
 	_, err := parseArgs([]string{"diagnostic.data", "--verbose"})
-	if err == nil || !strings.Contains(err.Error(), "--verbose is only supported for --view repl, wt, or system") {
+	if err == nil || !strings.Contains(err.Error(), "--verbose is only supported for --view repl, wt, system, or network") {
 		t.Fatalf("err=%v", err)
 	}
 }

@@ -70,6 +70,10 @@ func layoutForView(view string, nodeLabels []string, verbose, pressure bool) tab
 		return buildLayout(nil, []namedColumns{
 			{Name: "wiredTiger", Columns: wiredTigerColumns(verbose)},
 		})
+	case "network":
+		return buildLayout(nil, []namedColumns{
+			{Name: "network", Columns: networkColumns(verbose)},
+		})
 	case "system", "disk":
 		sections := []namedColumns{{Name: "system", Columns: systemColumns(verbose)}}
 		if pressure {
@@ -81,12 +85,14 @@ func layoutForView(view string, nodeLabels []string, verbose, pressure bool) tab
 	case "summary", "all":
 		return buildLayout(replicationColumns(nodeLabels, false), []namedColumns{
 			{Name: "server", Columns: columnsForSection("server")},
+			{Name: "network", Columns: columnsForSection("network")},
 			{Name: "system", Columns: columnsForSection("system")},
 			{Name: "wiredTiger", Columns: columnsForSection("wiredTiger")},
 		})
 	default:
 		return buildLayout(replicationColumns(nodeLabels, false), []namedColumns{
 			{Name: "server", Columns: columnsForSection("server")},
+			{Name: "network", Columns: columnsForSection("network")},
 			{Name: "system", Columns: columnsForSection("system")},
 			{Name: "wiredTiger", Columns: columnsForSection("wiredTiger")},
 		})
@@ -184,7 +190,42 @@ func renderHeader(w io.Writer, metadata model.Metadata, rsInfo derive.ReplSetInf
 		fmt.Fprintf(w, " %s", item)
 	}
 	fmt.Fprintln(w)
+	renderNetworkHeader(w, metadata)
 	fmt.Fprintln(w)
+}
+
+func renderNetworkHeader(w io.Writer, metadata model.Metadata) {
+	fmt.Fprintln(w, "network")
+	fmt.Fprintf(w, "  maxConn: %s\n", networkMaxConn(metadata))
+}
+
+func networkMaxConn(metadata model.Metadata) string {
+	records := metadata.Records("serverStatus")
+	if len(records) == 0 {
+		if latest, ok := metadata.LatestDoc("serverStatus"); ok {
+			return maxConnFromDoc(latest)
+		}
+		return "-"
+	}
+	return maxConnFromDoc(records[0].Doc)
+}
+
+func maxConnFromDoc(doc map[string]any) string {
+	current, ok := lookupFloat(doc, "connections.current")
+	if !ok {
+		current, ok = lookupFloat(doc, "serverStatus.connections.current")
+	}
+	if !ok {
+		return "-"
+	}
+	available, ok := lookupFloat(doc, "connections.available")
+	if !ok {
+		available, ok = lookupFloat(doc, "serverStatus.connections.available")
+	}
+	if !ok {
+		return "-"
+	}
+	return formatWholeNumber(current + available)
 }
 
 func renderHostInfo(w io.Writer, host map[string]any) {
@@ -828,6 +869,21 @@ func lookupString(doc map[string]any, path string) string {
 		return "-"
 	}
 	return s
+}
+
+func lookupFloat(doc map[string]any, path string) (float64, bool) {
+	v, ok := model.Lookup(doc, path)
+	if !ok {
+		return 0, false
+	}
+	return model.AsFloat(v)
+}
+
+func formatWholeNumber(value float64) string {
+	if math.Trunc(value) == value {
+		return strconv.FormatInt(int64(value), 10)
+	}
+	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
 func lookupList(doc map[string]any, path string) string {
