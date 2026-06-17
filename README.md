@@ -211,7 +211,7 @@ rsInfo replica set name and node label to host:port mapping
 hostInfo hostname/OS/kernel/libc/CPU topology/memory/pages/THP/versionString
 getCmdLineOpts argv
 configured parameters
-network maxConn metadata for `--view network`
+network maxConn metadata derived during metadata reading
 ```
 
 `buildInfo.perconaFeatures` is deduplicated while preserving first-seen order
@@ -254,12 +254,16 @@ options or config-derived `getCmdLineOpts`, primarily under `setParameter`.
 Metadata changes across files are normal in rotated diagnostic directories and
 are not printed as warnings by default.
 
-For `--view network`, the header also includes:
+The header always includes:
 
 ```text
 network
-  maxConn: connections.current + connections.available from the first usable serverStatus sample
+  maxConn: <connections.current + connections.available from the first usable serverStatus sample>
 ```
+
+`maxConn` is derived during metadata reading from the first usable
+`serverStatus` sample and stored as scalar header metadata. It uses
+`connections.current + connections.available`.
 
 If either connection field is unavailable in that first sample, `maxConn` is
 printed as `-`.
@@ -584,7 +588,8 @@ bandwidth context.
 The `summary` and `all` views also include the compact network section after
 server metrics, using the same `activeConn`, `idleConn`, and `totalCreated/s`
 columns. The header always includes the `network` section and `maxConn`
-metadata when the first usable `serverStatus` sample has both connection counts.
+metadata derived during metadata reading when the first usable `serverStatus`
+sample has both connection counts.
 MongoDB/PSMDB builds or non-Linux captures may only have `totalMicros` or no
 PSI metrics at all. Missing verbose or pressure metrics render as `-`.
 

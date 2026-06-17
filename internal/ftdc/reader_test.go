@@ -304,4 +304,25 @@ func writeVarint(buf *bytes.Buffer, value uint64) {
 	buf.WriteByte(byte(value))
 }
 
+func TestReadMetadataDerivesNetworkMaxConn(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "diagnostic.data.27000")
+	if _, err := os.Stat(root); err != nil {
+		t.Skip("diagnostic.data.27000 sample directory not present")
+	}
+	files, _, err := discovery.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) > 1 {
+		files = files[:1]
+	}
+	metadata, _, err := NewNativeReader().ReadMetadataFiles(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := metadata.NetworkMaxConnDisplay(); got == "-" || got == "" {
+		t.Fatalf("expected derived maxConn from metadata, got %q", got)
+	}
+}
+
 var _ = model.Warning{}

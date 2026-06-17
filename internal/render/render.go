@@ -223,36 +223,7 @@ func renderHeader(w io.Writer, metadata model.Metadata, rsInfo derive.ReplSetInf
 
 func renderNetworkHeader(w io.Writer, metadata model.Metadata) {
 	fmt.Fprintln(w, "network")
-	fmt.Fprintf(w, "  maxConn: %s\n", networkMaxConn(metadata))
-}
-
-func networkMaxConn(metadata model.Metadata) string {
-	records := metadata.Records("serverStatus")
-	if len(records) == 0 {
-		if latest, ok := metadata.LatestDoc("serverStatus"); ok {
-			return maxConnFromDoc(latest)
-		}
-		return "-"
-	}
-	return maxConnFromDoc(records[0].Doc)
-}
-
-func maxConnFromDoc(doc map[string]any) string {
-	current, ok := lookupFloat(doc, "connections.current")
-	if !ok {
-		current, ok = lookupFloat(doc, "serverStatus.connections.current")
-	}
-	if !ok {
-		return "-"
-	}
-	available, ok := lookupFloat(doc, "connections.available")
-	if !ok {
-		available, ok = lookupFloat(doc, "serverStatus.connections.available")
-	}
-	if !ok {
-		return "-"
-	}
-	return formatWholeNumber(current + available)
+	fmt.Fprintf(w, "  maxConn: %s\n", metadata.NetworkMaxConnDisplay())
 }
 
 func renderHostInfo(w io.Writer, host map[string]any) {

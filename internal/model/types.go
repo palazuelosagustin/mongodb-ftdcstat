@@ -95,9 +95,12 @@ type MetadataRecord struct {
 }
 
 type Metadata struct {
-	Latest   map[string]MetadataRecord   `json:"latest,omitempty"`
-	History  map[string][]MetadataRecord `json:"-"`
-	Warnings []Warning                   `json:"warnings,omitempty"`
+	Latest              map[string]MetadataRecord   `json:"latest,omitempty"`
+	History             map[string][]MetadataRecord `json:"-"`
+	Warnings            []Warning                   `json:"warnings,omitempty"`
+	networkMaxConn      string
+	networkMaxConnTime  time.Time
+	haveNetworkMaxConn  bool
 }
 
 func NewMetadata() Metadata {
@@ -139,6 +142,7 @@ func (m *Metadata) addRecord(record MetadataRecord) {
 	if trackMetadataHistory(record.Name) {
 		m.History[record.Name] = append(m.History[record.Name], record)
 	}
+	m.maybeSetNetworkMaxConn(record)
 	old, exists := m.Latest[record.Name]
 	if exists && !record.Timestamp.IsZero() && !old.Timestamp.IsZero() && record.Timestamp.Before(old.Timestamp) {
 		return
