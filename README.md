@@ -209,7 +209,7 @@ The static header prints stable environment data:
 buildInfo version/build/storage/allocator/OpenSSL, plus perconaFeatures on a separate line when present
 rsInfo replica set name and node label to host:port mapping
 hostInfo hostname/OS/kernel/libc/CPU topology/memory/pages/THP/versionString
-getCmdLineOpts argv
+getCmdLineOpts parsed config
 configured parameters
 network maxConn metadata derived during metadata reading
 ```

@@ -73,6 +73,7 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"serverStatus.metrics.repl.apply.ops",
 		"serverStatus.metrics.repl.buffer.apply.count",
 		"`getCmdLineOpts` prints the parsed startup config",
+		"getCmdLineOpts parsed config",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("README missing %q", want)
@@ -80,5 +81,8 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 	}
 	if strings.Contains(text, "### `repl` View\n\n```text\nrsState") {
 		t.Fatal("README should not document rsState as part of the repl section")
+	}
+	if strings.Contains(text, "getCmdLineOpts argv") {
+		t.Fatal("README should document parsed getCmdLineOpts config, not raw argv")
 	}
 }
