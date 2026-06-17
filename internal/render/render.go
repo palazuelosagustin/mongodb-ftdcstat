@@ -67,7 +67,7 @@ func Render(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows
 		return enc.Encode(payload)
 	}
 	renderHeader(w, metadata, rsInfo, loc)
-	renderer := newStreamingRenderer(w, layout.Columns, layout.Sections, rows, loc)
+	renderer := newStreamingRenderer(w, layout.Columns, layout.Sections, loc)
 	for _, row := range rows {
 		if err := renderer.RenderRow(row); err != nil {
 			return err
@@ -527,7 +527,7 @@ func formatMetadataTimestamp(t time.Time, loc *time.Location) string {
 }
 
 func renderTable(w io.Writer, rows []derive.Row, cols []string, sections []tableSection, loc *time.Location) {
-	renderer := newStreamingRenderer(w, cols, sections, rows, loc)
+	renderer := newStreamingRenderer(w, cols, sections, loc)
 	for _, row := range rows {
 		_ = renderer.RenderRow(row)
 	}
@@ -546,35 +546,33 @@ func NewStreamingRenderer(w io.Writer, metadata model.Metadata, rowsForSizing []
 		loc = time.UTC
 	}
 	renderHeader(w, metadata, rsInfo, loc)
-	return newStreamingRenderer(w, layout.Columns, layout.Sections, rowsForSizing, loc), nil
+	return newStreamingRenderer(w, layout.Columns, layout.Sections, loc), nil
 }
 
-func newStreamingRenderer(w io.Writer, cols []string, sections []tableSection, rowsForSizing []derive.Row, loc *time.Location) *StreamingRenderer {
+func newStreamingRenderer(w io.Writer, cols []string, sections []tableSection, loc *time.Location) *StreamingRenderer {
 	if loc == nil {
 		loc = time.UTC
 	}
 	header := displayColumns(cols)
-	matrix := make([][]string, 0, len(rowsForSizing)+1)
-	matrix = append(matrix, header)
-	for _, row := range rowsForSizing {
-		matrix = append(matrix, tableLineForRow(cols, row, loc))
-	}
-	widths := widths(matrix)
 	renderer := &StreamingRenderer{
 		w:                w,
 		cols:             cols,
 		sections:         sections,
-		widths:           widths,
+		widths:           baseColumnWidths(cols),
 		separators:       separatorsFromSections(sections),
 		header:           header,
 		loc:              loc,
 		headerRepeatRows: headerRepeatRows,
 	}
-	renderer.printHeader()
 	return renderer
 }
 
 func (r *StreamingRenderer) RenderRow(row derive.Row) error {
+	line := tableLineForRow(r.cols, row, r.loc)
+	growColumnWidths(r.widths, line)
+	if r.dataRows == 0 {
+		r.printHeader()
+	}
 	if r.dataRows > 0 && r.dataRows%r.headerRepeatRows == 0 {
 		r.printHeader()
 	}
@@ -588,7 +586,7 @@ func (r *StreamingRenderer) RenderRow(row derive.Row) error {
 			return err
 		}
 	}
-	printLine(r.w, tableLineForRow(r.cols, row, r.loc), r.cols, r.widths, r.separators, false)
+	printLine(r.w, line, r.cols, r.widths, r.separators, false)
 	r.dataRows++
 	return nil
 }
@@ -723,22 +721,24 @@ func formatRowTime(t time.Time, loc *time.Location) string {
 	return t.In(loc).Format(time.RFC3339)
 }
 
-func widths(matrix [][]string) []int {
-	var n int
-	for _, row := range matrix {
-		if len(row) > n {
-			n = len(row)
-		}
-	}
-	out := make([]int, n)
-	for _, row := range matrix {
-		for i, cell := range row {
-			if len(cell) > out[i] {
-				out[i] = len(cell)
-			}
-		}
+func baseColumnWidths(cols []string) []int {
+	header := displayColumns(cols)
+	out := make([]int, len(header))
+	for i, cell := range header {
+		out[i] = len(cell)
 	}
 	return out
+}
+
+func growColumnWidths(widths []int, line []string) {
+	for i, cell := range line {
+		if i >= len(widths) {
+			break
+		}
+		if len(cell) > widths[i] {
+			widths[i] = len(cell)
+		}
+	}
 }
 
 func format(v any, key string) string {

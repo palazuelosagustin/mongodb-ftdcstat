@@ -65,10 +65,46 @@ func main() {
 		Metadata:        metadata,
 		TimeLocation:    timeLocation,
 	})
-	var rows []derive.Row
+	renderOpts := render.Options{
+		View:         opts.View,
+		JSON:         opts.JSON,
+		Verbose:      opts.Verbose,
+		Pressure:     opts.Pressure,
+		TimeLocation: timeLocation,
+	}
+	if opts.JSON {
+		var rows []derive.Row
+		streamWarnings, err := reader.StreamFiles(files, readerOpts, func(sample model.MetricSample) error {
+			if row, ok := streamer.Add(sample); ok {
+				rows = append(rows, row)
+			}
+			return nil
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "ftdcstat:", err)
+			os.Exit(1)
+		}
+		warnings = append(warnings, streamWarnings...)
+		for _, warning := range streamWarnings {
+			fmt.Fprintln(os.Stderr, "warning:", warning.String())
+		}
+		if err := render.Render(os.Stdout, metadata, warnings, rows, renderOpts); err != nil {
+			fmt.Fprintln(os.Stderr, "ftdcstat:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	renderer, err := render.NewStreamingRenderer(os.Stdout, metadata, nil, renderOpts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ftdcstat:", err)
+		os.Exit(1)
+	}
 	streamWarnings, err := reader.StreamFiles(files, readerOpts, func(sample model.MetricSample) error {
 		if row, ok := streamer.Add(sample); ok {
-			rows = append(rows, row)
+			if err := renderer.RenderRow(row); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -80,7 +116,7 @@ func main() {
 	for _, warning := range streamWarnings {
 		fmt.Fprintln(os.Stderr, "warning:", warning.String())
 	}
-	if err := render.Render(os.Stdout, metadata, warnings, rows, render.Options{View: opts.View, JSON: opts.JSON, Verbose: opts.Verbose, Pressure: opts.Pressure, TimeLocation: timeLocation}); err != nil {
+	if err := renderer.Close(); err != nil {
 		fmt.Fprintln(os.Stderr, "ftdcstat:", err)
 		os.Exit(1)
 	}
