@@ -18,6 +18,7 @@ type Options struct {
 	View         string
 	JSON         bool
 	WebURL       string
+	AvgBucket    time.Duration
 	MetricsRange MetricsRange
 	Verbose      bool
 	Pressure     bool
@@ -71,6 +72,7 @@ func RenderJSON(w io.Writer, metadata model.Metadata, warnings []model.Warning, 
 		"rsInfo":   rsInfoForJSON(rsInfo),
 		"warnings": warnings,
 		"view":     opts.View,
+		"avg":      avgPayload(opts.AvgBucket),
 		"rows":     rowsForJSON(rows, layout),
 	}
 	enc := json.NewEncoder(w)
@@ -87,6 +89,7 @@ func renderTableRows(w io.Writer, metadata model.Metadata, rows []derive.Row, op
 		loc = time.UTC
 	}
 	renderHeader(w, metadata, rsInfo, loc, opts.WebURL, opts.MetricsRange)
+	renderAverageNotice(w, opts.AvgBucket)
 	renderer := newStreamingRenderer(w, layout.Columns, layout.Sections, loc)
 	for _, row := range rows {
 		if err := renderer.RenderRow(row); err != nil {
@@ -256,6 +259,13 @@ func formatMetricsRangeTime(ts time.Time) string {
 func renderWebUIHeader(w io.Writer, webURL string) {
 	fmt.Fprintln(w, "webUI")
 	fmt.Fprintf(w, "  url: %s\n", webURL)
+}
+
+func renderAverageNotice(w io.Writer, bucket time.Duration) {
+	if bucket <= 0 {
+		return
+	}
+	fmt.Fprintf(w, "Averaging: %s buckets; datetime is bucket start; values are averaged per bucket.\n\n", FormatAvgBucket(bucket))
 }
 
 func renderHostInfo(w io.Writer, host map[string]any) {
@@ -559,6 +569,7 @@ func NewStreamingRenderer(w io.Writer, metadata model.Metadata, opts Options) (*
 		loc = time.UTC
 	}
 	renderHeader(w, metadata, rsInfo, loc, opts.WebURL, opts.MetricsRange)
+	renderAverageNotice(w, opts.AvgBucket)
 	return newStreamingRenderer(w, layout.Columns, layout.Sections, loc), nil
 }
 
@@ -574,6 +585,24 @@ func MetricsRangeFromRows(rows []derive.Row) MetricsRange {
 		out.End = row.Time
 	}
 	return out
+}
+
+func avgPayload(bucket time.Duration) map[string]any {
+	return map[string]any{
+		"enabled":  bucket > 0,
+		"bucket":   FormatAvgBucket(bucket),
+		"datetime": "bucket_start",
+	}
+}
+
+func FormatAvgBucket(bucket time.Duration) string {
+	if bucket <= 0 {
+		return ""
+	}
+	if bucket%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int(bucket/time.Minute))
+	}
+	return bucket.String()
 }
 
 func newStreamingRenderer(w io.Writer, cols []string, sections []tableSection, loc *time.Location) *StreamingRenderer {

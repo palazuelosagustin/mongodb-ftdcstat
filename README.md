@@ -73,14 +73,24 @@ With the default MongoDB `diagnosticDataCollectionPeriodMillis=1000`,
 
 ### `--avg DURATION`
 
-`--avg` averages derived rows into fixed time buckets before plotting them in the
-local web UI.
+`--avg` averages derived rows into fixed time buckets for both the terminal
+report and the local web UI.
 
 ```bash
+ftdcstat diagnostic.data --view summary --avg 5m
 ftdcstat diagnostic.data --web --view summary --avg 5m
 ```
 
-The bucket size uses Go duration syntax such as `30s`, `5m`, or `1h`. `--avg` is currently intended for `--web` mode, where it reduces browser-side point count for large captures.
+Valid bucket sizes are `1m` through `15m`. `--avg` rejects smaller or larger
+durations, and it cannot be combined with an explicit `--interval`.
+
+When enabled, `ftdcstat` prints:
+
+```text
+Averaging: 5m buckets; datetime is bucket start; values are averaged per bucket.
+```
+
+right before the metrics table. Empty buckets are skipped.
 
 ### `--device DEVICE`
 

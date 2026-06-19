@@ -85,7 +85,11 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"embeds the local URL in a `webUI` header section",
 		"webUI\n  url: http://127.0.0.1:",
 		"`--web` cannot be combined with `--json`",
-		"`--avg` is currently intended for `--web` mode",
+		"`--avg` averages derived rows into fixed time buckets for both the terminal",
+		"Valid bucket sizes are `1m` through `15m`.",
+		"`--avg` rejects smaller or larger",
+		"durations, and it cannot be combined with an explicit `--interval`.",
+		"Averaging: 5m buckets; datetime is bucket start; values are averaged per bucket.",
 		"`/api/metadata`",
 		"`/api/data`",
 		"`/app.js`",
@@ -114,6 +118,9 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 	}
 	if strings.Contains(text, "`--web` starts a local HTTP server instead of printing the terminal table") {
 		t.Fatal("README should document that --web still prints the terminal table")
+	}
+	if strings.Contains(text, "`--avg` is currently intended for `--web` mode") {
+		t.Fatal("README should document avg for both table and web output")
 	}
 	if strings.Contains(text, "getCmdLineOpts argv") {
 		t.Fatal("README should document parsed getCmdLineOpts config, not raw argv")

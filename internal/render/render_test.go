@@ -293,6 +293,28 @@ func TestHeaderPrintsDashMetricsRangeWhenNoRows(t *testing.T) {
 	}
 }
 
+func TestAverageNoticePrintsBeforeMetricsTable(t *testing.T) {
+	var buf bytes.Buffer
+	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{
+		View:      "server",
+		AvgBucket: 5 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	want := "Averaging: 5m buckets; datetime is bucket start; values are averaged per bucket."
+	if !strings.Contains(out, want) {
+		t.Fatalf("missing average notice:\n%s", out)
+	}
+	noticeIdx := strings.Index(out, want)
+	_, headerLine := firstTableHeader(out)
+	tableIdx := strings.Index(out, headerLine)
+	if noticeIdx < 0 || tableIdx < 0 || noticeIdx > tableIdx {
+		t.Fatalf("average notice should appear before the table:\n%s", out)
+	}
+}
+
 func TestStreamingRendererMatchesRenderOutput(t *testing.T) {
 	rows := make([]derive.Row, 51)
 	for i := range rows {
@@ -1286,6 +1308,31 @@ func TestJSONSummaryViewIncludesMajLagSInReplication(t *testing.T) {
 	}
 	if _, ok := server["conn"]; ok {
 		t.Fatalf("server should not contain conn: %#v", server)
+	}
+	avg := payload["avg"].(map[string]any)
+	if avg["enabled"] != false {
+		t.Fatalf("avg.enabled=%#v", avg["enabled"])
+	}
+}
+
+func TestJSONAvgMetadataIncludedWhenEnabled(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{View: "summary", JSON: true, AvgBucket: 5 * time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	avg := payload["avg"].(map[string]any)
+	if avg["enabled"] != true {
+		t.Fatalf("avg.enabled=%#v", avg["enabled"])
+	}
+	if avg["bucket"] != "5m" {
+		t.Fatalf("avg.bucket=%#v", avg["bucket"])
+	}
+	if avg["datetime"] != "bucket_start" {
+		t.Fatalf("avg.datetime=%#v", avg["datetime"])
 	}
 }
 

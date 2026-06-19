@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"ftdcstat/internal/aggregate"
 	"ftdcstat/internal/derive"
 	"ftdcstat/internal/model"
 	"ftdcstat/internal/render"
@@ -25,6 +26,7 @@ var assets embed.FS
 type Options struct {
 	View         string
 	Avg          time.Duration
+	RowsAveraged bool
 	TimeRange    model.TimeRange
 	TimeLocation *time.Location
 }
@@ -53,8 +55,9 @@ type DataResponse struct {
 }
 
 type AvgInfo struct {
-	Enabled bool   `json:"enabled"`
-	Bucket  string `json:"bucket,omitempty"`
+	Enabled  bool   `json:"enabled"`
+	Bucket   string `json:"bucket,omitempty"`
+	Datetime string `json:"datetime,omitempty"`
 }
 
 type TimeRangeInfo struct {
@@ -115,8 +118,8 @@ func BuildDataset(metadata model.Metadata, warnings []model.Warning, rows []deri
 	if loc == nil {
 		loc = time.UTC
 	}
-	if opts.Avg > 0 {
-		rows = averageRows(rows, opts.Avg)
+	if opts.Avg > 0 && !opts.RowsAveraged {
+		rows = aggregate.AverageRows(rows, opts.Avg)
 	}
 	desc := render.DescribeView(metadata, rows, renderOpts)
 	sections := buildSections(desc, opts.View)
@@ -409,7 +412,7 @@ func avgInfo(bucket time.Duration) AvgInfo {
 	if bucket <= 0 {
 		return AvgInfo{}
 	}
-	return AvgInfo{Enabled: true, Bucket: bucket.String()}
+	return AvgInfo{Enabled: true, Bucket: render.FormatAvgBucket(bucket), Datetime: "bucket_start"}
 }
 
 func timeRangeInfo(r model.TimeRange, loc *time.Location) TimeRangeInfo {
@@ -673,77 +676,6 @@ func sectionColumns(sections []Section) map[string][]string {
 		}
 		out[section.Name] = cols
 	}
-	return out
-}
-
-func averageRows(rows []derive.Row, bucket time.Duration) []derive.Row {
-	if bucket <= 0 || len(rows) == 0 {
-		return append([]derive.Row(nil), rows...)
-	}
-	type aggregate struct {
-		start   time.Time
-		sums    map[string]float64
-		counts  map[string]float64
-		strings map[string]any
-		marker  string
-		process string
-	}
-	var out []derive.Row
-	var cur aggregate
-	flush := func() {
-		if cur.start.IsZero() {
-			return
-		}
-		values := make(map[string]any, len(cur.sums)+len(cur.strings))
-		for key, sum := range cur.sums {
-			if count := cur.counts[key]; count > 0 {
-				values[key] = sum / count
-			}
-		}
-		for key, value := range cur.strings {
-			if _, exists := values[key]; !exists {
-				values[key] = value
-			}
-		}
-		out = append(out, derive.Row{
-			Time:          cur.start,
-			Marker:        cur.marker,
-			ProcessMarker: cur.process,
-			Values:        values,
-		})
-	}
-	reset := func(start time.Time) {
-		cur = aggregate{
-			start:   start,
-			sums:    map[string]float64{},
-			counts:  map[string]float64{},
-			strings: map[string]any{},
-		}
-	}
-	for _, row := range rows {
-		start := row.Time.Truncate(bucket)
-		if cur.start.IsZero() {
-			reset(start)
-		} else if !start.Equal(cur.start) {
-			flush()
-			reset(start)
-		}
-		if cur.marker == "" && row.Marker != "" {
-			cur.marker = row.Marker
-		}
-		if cur.process == "" && row.ProcessMarker != "" {
-			cur.process = row.ProcessMarker
-		}
-		for key, value := range row.Values {
-			if number, ok := model.AsFloat(value); ok {
-				cur.sums[key] += number
-				cur.counts[key]++
-				continue
-			}
-			cur.strings[key] = value
-		}
-	}
-	flush()
 	return out
 }
 

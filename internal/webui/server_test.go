@@ -50,8 +50,11 @@ func TestBuildDatasetAveragesRowsIntoBuckets(t *testing.T) {
 		Avg:          time.Minute,
 		TimeLocation: time.UTC,
 	})
-	if !dataset.Metadata.Avg.Enabled || dataset.Metadata.Avg.Bucket != "1m0s" {
+	if !dataset.Metadata.Avg.Enabled || dataset.Metadata.Avg.Bucket != "1m" {
 		t.Fatalf("avg=%#v", dataset.Metadata.Avg)
+	}
+	if dataset.Metadata.Avg.Datetime != "bucket_start" {
+		t.Fatalf("datetime=%q", dataset.Metadata.Avg.Datetime)
 	}
 	if len(dataset.Data.Rows) != 2 {
 		t.Fatalf("rows=%d", len(dataset.Data.Rows))
@@ -66,6 +69,51 @@ func TestBuildDatasetAveragesRowsIntoBuckets(t *testing.T) {
 	}
 	if got := network["queuedConn"]; got != 3.0 {
 		t.Fatalf("queuedConn=%v", got)
+	}
+}
+
+func TestWebAPIReturnsAveragedRows(t *testing.T) {
+	dataset := BuildDataset(model.NewMetadata(), nil, []derive.Row{
+		{
+			Time: time.Date(2026, 6, 18, 12, 0, 5, 0, time.UTC),
+			Values: map[string]any{
+				"activeConn": 10.0,
+			},
+		},
+		{
+			Time: time.Date(2026, 6, 18, 12, 0, 40, 0, time.UTC),
+			Values: map[string]any{
+				"activeConn": 14.0,
+			},
+		},
+		{
+			Time: time.Date(2026, 6, 18, 12, 1, 5, 0, time.UTC),
+			Values: map[string]any{
+				"activeConn": 20.0,
+			},
+		},
+	}, render.Options{View: "network"}, Options{
+		View:         "network",
+		Avg:          time.Minute,
+		TimeLocation: time.UTC,
+	})
+	server, err := NewServer(dataset)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var dataResp DataResponse
+	if err := json.Unmarshal(extractBody(t, serveTestRequest(t, server, "GET /api/data HTTP/1.1\r\nHost: localhost\r\n\r\n")), &dataResp); err != nil {
+		t.Fatal(err)
+	}
+	if len(dataResp.Rows) != 2 {
+		t.Fatalf("rows=%d", len(dataResp.Rows))
+	}
+	if dataResp.Avg.Bucket != "1m" {
+		t.Fatalf("bucket=%q", dataResp.Avg.Bucket)
+	}
+	if got := dataResp.Rows[0].Sections["network"]["activeConn"]; got != 12.0 {
+		t.Fatalf("activeConn=%v", got)
 	}
 }
 

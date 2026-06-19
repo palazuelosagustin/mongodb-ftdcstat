@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"ftdcstat/internal/aggregate"
 	"ftdcstat/internal/derive"
 	"ftdcstat/internal/discovery"
 	"ftdcstat/internal/ftdc"
@@ -18,24 +19,26 @@ import (
 )
 
 type cliOptions struct {
-	Path     string
-	View     string
-	Interval int
-	Avg      time.Duration
-	Device   string
-	JSON     bool
-	Web      bool
-	Listen   string
-	Verbose  bool
-	Pressure bool
-	Range    model.TimeRange
+	Path        string
+	View        string
+	Interval    int
+	IntervalSet bool
+	Avg         time.Duration
+	Device      string
+	JSON        bool
+	Web         bool
+	Listen      string
+	Verbose     bool
+	Pressure    bool
+	Range       model.TimeRange
 }
 
 type captureInput struct {
-	reader     ftdc.NativeReader
-	files      []discovery.MetricFile
-	readerOpts ftdc.ReaderOptions
-	metadata   model.Metadata
+	reader       ftdc.NativeReader
+	files        []discovery.MetricFile
+	readerOpts   ftdc.ReaderOptions
+	metadata     model.Metadata
+	avgBucket    time.Duration
 	streamerOpts derive.Options
 }
 
@@ -83,6 +86,7 @@ func main() {
 		files:      files,
 		readerOpts: readerOpts,
 		metadata:   metadata,
+		avgBucket:  opts.Avg,
 		streamerOpts: derive.Options{
 			IntervalSeconds: opts.Interval,
 			GapThreshold:    time.Duration(max(60, opts.Interval*10)) * time.Second,
@@ -118,14 +122,20 @@ func runStreamingTableOutput(w io.Writer, input captureInput, warnings []model.W
 		return err
 	}
 	renderOpts.MetricsRange = metricsRange
+	renderOpts.AvgBucket = input.avgBucket
 	renderer, err := render.NewStreamingRenderer(w, input.metadata, renderOpts)
 	if err != nil {
 		return err
 	}
 	streamer := derive.NewStreamer(input.streamerOpts)
+	averager := aggregate.NewRowBucketAverager(input.avgBucket)
 	streamWarnings, err := input.reader.StreamFiles(input.files, input.readerOpts, func(sample model.MetricSample) error {
 		if row, ok := streamer.Add(sample); ok {
-			return renderer.RenderRow(row)
+			for _, averaged := range averager.Add(row) {
+				if err := renderer.RenderRow(averaged); err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})
@@ -133,30 +143,38 @@ func runStreamingTableOutput(w io.Writer, input captureInput, warnings []model.W
 	if err != nil {
 		return err
 	}
+	for _, averaged := range averager.Flush() {
+		if err := renderer.RenderRow(averaged); err != nil {
+			return err
+		}
+	}
 	_ = warnings
 	return renderer.Close()
 }
 
 func runBufferedOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {
-	rows, streamWarnings, err := collectRows(input)
+	rows, metricsRange, streamWarnings, err := collectRows(input)
 	emitWarnings(streamWarnings)
 	if err != nil {
 		return err
 	}
-	renderOpts.MetricsRange = render.MetricsRangeFromRows(rows)
+	renderOpts.MetricsRange = metricsRange
+	renderOpts.AvgBucket = input.avgBucket
 	return render.RenderJSON(w, input.metadata, warnings, rows, renderOpts)
 }
 
 func runWebOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options, opts cliOptions) error {
-	rows, streamWarnings, err := collectRows(input)
+	rows, metricsRange, streamWarnings, err := collectRows(input)
 	emitWarnings(streamWarnings)
 	if err != nil {
 		return err
 	}
-	renderOpts.MetricsRange = render.MetricsRangeFromRows(rows)
+	renderOpts.MetricsRange = metricsRange
+	renderOpts.AvgBucket = input.avgBucket
 	dataset := webui.BuildDataset(input.metadata, append(append([]model.Warning(nil), warnings...), streamWarnings...), rows, renderOpts, webui.Options{
 		View:         opts.View,
 		Avg:          opts.Avg,
+		RowsAveraged: opts.Avg > 0,
 		TimeRange:    opts.Range,
 		TimeLocation: renderOpts.TimeLocation,
 	})
@@ -179,16 +197,30 @@ func runWebOutput(w io.Writer, input captureInput, warnings []model.Warning, ren
 	return server.Serve()
 }
 
-func collectRows(input captureInput) ([]derive.Row, []model.Warning, error) {
+func collectRows(input captureInput) ([]derive.Row, render.MetricsRange, []model.Warning, error) {
 	collector := bufferedRowCollector{}
 	streamer := derive.NewStreamer(input.streamerOpts)
+	averager := aggregate.NewRowBucketAverager(input.avgBucket)
+	var metricsRange render.MetricsRange
 	streamWarnings, err := input.reader.StreamFiles(input.files, input.readerOpts, func(sample model.MetricSample) error {
 		if row, ok := streamer.Add(sample); ok {
-			collector.add(row)
+			if metricsRange.Start.IsZero() {
+				metricsRange.Start = row.Time
+			}
+			metricsRange.End = row.Time
+			for _, averaged := range averager.Add(row) {
+				collector.add(averaged)
+			}
 		}
 		return nil
 	})
-	return collector.snapshot(), streamWarnings, err
+	if err != nil {
+		return nil, render.MetricsRange{}, streamWarnings, err
+	}
+	for _, averaged := range averager.Flush() {
+		collector.add(averaged)
+	}
+	return collector.snapshot(), metricsRange, streamWarnings, nil
 }
 
 func streamMetricsRange(input captureInput) (render.MetricsRange, error) {
@@ -256,17 +288,17 @@ func parseArgs(args []string) (cliOptions, error) {
 		case arg == "--avg":
 			i++
 			if i >= len(args) {
-				return opts, errors.New("--avg requires a value")
+				return opts, errors.New("--avg requires a duration, for example: --avg 5m")
 			}
 			d, err := time.ParseDuration(args[i])
-			if err != nil || d <= 0 {
-				return opts, errors.New("--avg must be a positive duration")
+			if err != nil {
+				return opts, errors.New("--avg duration must be between 1m and 15m")
 			}
 			opts.Avg = d
 		case strings.HasPrefix(arg, "--avg="):
 			d, err := time.ParseDuration(strings.TrimPrefix(arg, "--avg="))
-			if err != nil || d <= 0 {
-				return opts, errors.New("--avg must be a positive duration")
+			if err != nil {
+				return opts, errors.New("--avg duration must be between 1m and 15m")
 			}
 			opts.Avg = d
 		case arg == "--view":
@@ -287,12 +319,14 @@ func parseArgs(args []string) (cliOptions, error) {
 				return opts, errors.New("--interval must be a positive integer")
 			}
 			opts.Interval = n
+			opts.IntervalSet = true
 		case strings.HasPrefix(arg, "--interval="):
 			n, err := strconv.Atoi(strings.TrimPrefix(arg, "--interval="))
 			if err != nil || n <= 0 {
 				return opts, errors.New("--interval must be a positive integer")
 			}
 			opts.Interval = n
+			opts.IntervalSet = true
 		case arg == "--device":
 			i++
 			if i >= len(args) {
@@ -360,8 +394,11 @@ func parseArgs(args []string) (cliOptions, error) {
 	if opts.Listen != "" && !opts.Web {
 		return opts, errors.New("--listen is only supported with --web")
 	}
-	if opts.Avg > 0 && !opts.Web {
-		return opts, errors.New("--avg is only supported with --web")
+	if opts.Avg > 0 && (opts.Avg < time.Minute || opts.Avg > 15*time.Minute) {
+		return opts, errors.New("--avg duration must be between 1m and 15m")
+	}
+	if opts.Avg > 0 && opts.IntervalSet {
+		return opts, errors.New("--avg cannot be combined with --interval")
 	}
 	switch opts.View {
 	case "server", "wt", "system", "network", "repl", "summary":

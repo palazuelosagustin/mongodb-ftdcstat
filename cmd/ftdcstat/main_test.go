@@ -115,6 +115,41 @@ func TestParseArgsWebListenAndAvg(t *testing.T) {
 	}
 }
 
+func TestParseArgsAvgValidDurations(t *testing.T) {
+	for _, value := range []string{"1m", "5m", "15m"} {
+		opts, err := parseArgs([]string{"diagnostic.data", "--avg", value})
+		if err != nil {
+			t.Fatalf("%s: %v", value, err)
+		}
+		if opts.Avg <= 0 {
+			t.Fatalf("%s: avg=%s", value, opts.Avg)
+		}
+	}
+}
+
+func TestParseArgsAvgMissingDurationFails(t *testing.T) {
+	_, err := parseArgs([]string{"diagnostic.data", "--avg"})
+	if err == nil || !strings.Contains(err.Error(), "--avg requires a duration, for example: --avg 5m") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestParseArgsAvgDurationRangeFails(t *testing.T) {
+	for _, value := range []string{"30s", "16m", "1h"} {
+		_, err := parseArgs([]string{"diagnostic.data", "--avg", value})
+		if err == nil || !strings.Contains(err.Error(), "--avg duration must be between 1m and 15m") {
+			t.Fatalf("%s: err=%v", value, err)
+		}
+	}
+}
+
+func TestParseArgsAvgRejectsExplicitInterval(t *testing.T) {
+	_, err := parseArgs([]string{"diagnostic.data", "--avg", "5m", "--interval", "120"})
+	if err == nil || !strings.Contains(err.Error(), "--avg cannot be combined with --interval") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestParseArgsWebRejectsJSON(t *testing.T) {
 	_, err := parseArgs([]string{"diagnostic.data", "--web", "--json"})
 	if err == nil || !strings.Contains(err.Error(), "--web cannot be combined with --json") {
@@ -125,13 +160,6 @@ func TestParseArgsWebRejectsJSON(t *testing.T) {
 func TestParseArgsListenRequiresWeb(t *testing.T) {
 	_, err := parseArgs([]string{"diagnostic.data", "--listen", "127.0.0.1:8080"})
 	if err == nil || !strings.Contains(err.Error(), "--listen is only supported with --web") {
-		t.Fatalf("err=%v", err)
-	}
-}
-
-func TestParseArgsAvgRequiresWeb(t *testing.T) {
-	_, err := parseArgs([]string{"diagnostic.data", "--avg", "5m"})
-	if err == nil || !strings.Contains(err.Error(), "--avg is only supported with --web") {
 		t.Fatalf("err=%v", err)
 	}
 }
