@@ -92,6 +92,50 @@ func TestParseArgsPressure(t *testing.T) {
 	}
 }
 
+func TestParseArgsWeb(t *testing.T) {
+	opts, err := parseArgs([]string{"diagnostic.data", "--web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.Web {
+		t.Fatal("expected web=true")
+	}
+}
+
+func TestParseArgsWebListenAndAvg(t *testing.T) {
+	opts, err := parseArgs([]string{"diagnostic.data", "--web", "--listen", "127.0.0.1:8080", "--avg", "5m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Listen != "127.0.0.1:8080" {
+		t.Fatalf("listen=%s", opts.Listen)
+	}
+	if opts.Avg != 5*time.Minute {
+		t.Fatalf("avg=%s", opts.Avg)
+	}
+}
+
+func TestParseArgsWebRejectsJSON(t *testing.T) {
+	_, err := parseArgs([]string{"diagnostic.data", "--web", "--json"})
+	if err == nil || !strings.Contains(err.Error(), "--web cannot be combined with --json") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestParseArgsListenRequiresWeb(t *testing.T) {
+	_, err := parseArgs([]string{"diagnostic.data", "--listen", "127.0.0.1:8080"})
+	if err == nil || !strings.Contains(err.Error(), "--listen is only supported with --web") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestParseArgsAvgRequiresWeb(t *testing.T) {
+	_, err := parseArgs([]string{"diagnostic.data", "--avg", "5m"})
+	if err == nil || !strings.Contains(err.Error(), "--avg is only supported with --web") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestParseArgsSystemVerbosePressure(t *testing.T) {
 	opts, err := parseArgs([]string{"diagnostic.data", "--view", "system", "--verbose", "--pressure"})
 	if err != nil {

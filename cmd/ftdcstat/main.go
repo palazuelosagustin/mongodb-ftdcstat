@@ -14,14 +14,18 @@ import (
 	"ftdcstat/internal/ftdc"
 	"ftdcstat/internal/model"
 	"ftdcstat/internal/render"
+	"ftdcstat/internal/webui"
 )
 
 type cliOptions struct {
 	Path     string
 	View     string
 	Interval int
+	Avg      time.Duration
 	Device   string
 	JSON     bool
+	Web      bool
+	Listen   string
 	Verbose  bool
 	Pressure bool
 	Range    model.TimeRange
@@ -75,10 +79,10 @@ func main() {
 		TimeLocation: timeLocation,
 	}
 	input := captureInput{
-		reader:   reader,
-		files:    files,
+		reader:     reader,
+		files:      files,
 		readerOpts: readerOpts,
-		metadata: metadata,
+		metadata:   metadata,
 		streamer: derive.NewStreamer(derive.Options{
 			IntervalSeconds: opts.Interval,
 			GapThreshold:    time.Duration(max(60, opts.Interval*10)) * time.Second,
@@ -88,6 +92,13 @@ func main() {
 		}),
 	}
 
+	if opts.Web {
+		if err := runWebOutput(os.Stdout, input, warnings, renderOpts, opts); err != nil {
+			fmt.Fprintln(os.Stderr, "ftdcstat:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if render.NeedsBufferedRows(renderOpts) {
 		if err := runBufferedOutput(os.Stdout, input, warnings, renderOpts); err != nil {
 			fmt.Fprintln(os.Stderr, "ftdcstat:", err)
@@ -121,6 +132,42 @@ func runStreamingTableOutput(w io.Writer, input captureInput, warnings []model.W
 }
 
 func runBufferedOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {
+	rows, streamWarnings, err := collectRows(input)
+	emitWarnings(streamWarnings)
+	if err != nil {
+		return err
+	}
+	return render.RenderJSON(w, input.metadata, warnings, rows, renderOpts)
+}
+
+func runWebOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options, opts cliOptions) error {
+	rows, streamWarnings, err := collectRows(input)
+	emitWarnings(streamWarnings)
+	if err != nil {
+		return err
+	}
+	dataset := webui.BuildDataset(input.metadata, append(append([]model.Warning(nil), warnings...), streamWarnings...), rows, renderOpts, webui.Options{
+		View:         opts.View,
+		Avg:          opts.Avg,
+		TimeRange:    opts.Range,
+		TimeLocation: renderOpts.TimeLocation,
+	})
+	if dataset.Metadata.RowCount > 5000 {
+		fmt.Fprintln(os.Stderr, "warning: Large capture detected. Consider using --avg 5m or --from/--to for better browser performance.")
+	}
+	server, err := webui.NewServer(dataset)
+	if err != nil {
+		return err
+	}
+	address, err := server.Listen(opts.Listen)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "Serving ftdcstat web UI at %s\n", address)
+	return server.Serve()
+}
+
+func collectRows(input captureInput) ([]derive.Row, []model.Warning, error) {
 	collector := bufferedRowCollector{}
 	streamWarnings, err := input.reader.StreamFiles(input.files, input.readerOpts, func(sample model.MetricSample) error {
 		if row, ok := input.streamer.Add(sample); ok {
@@ -128,11 +175,7 @@ func runBufferedOutput(w io.Writer, input captureInput, warnings []model.Warning
 		}
 		return nil
 	})
-	emitWarnings(streamWarnings)
-	if err != nil {
-		return err
-	}
-	return render.RenderJSON(w, input.metadata, warnings, collector.snapshot(), renderOpts)
+	return collector.snapshot(), streamWarnings, err
 }
 
 type bufferedRowCollector struct {
@@ -163,10 +206,36 @@ func parseArgs(args []string) (cliOptions, error) {
 			os.Exit(0)
 		case arg == "--json":
 			opts.JSON = true
+		case arg == "--web":
+			opts.Web = true
 		case arg == "--verbose":
 			opts.Verbose = true
 		case arg == "--pressure":
 			opts.Pressure = true
+		case arg == "--listen":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--listen requires a value")
+			}
+			opts.Listen = args[i]
+		case strings.HasPrefix(arg, "--listen="):
+			opts.Listen = strings.TrimPrefix(arg, "--listen=")
+		case arg == "--avg":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--avg requires a value")
+			}
+			d, err := time.ParseDuration(args[i])
+			if err != nil || d <= 0 {
+				return opts, errors.New("--avg must be a positive duration")
+			}
+			opts.Avg = d
+		case strings.HasPrefix(arg, "--avg="):
+			d, err := time.ParseDuration(strings.TrimPrefix(arg, "--avg="))
+			if err != nil || d <= 0 {
+				return opts, errors.New("--avg must be a positive duration")
+			}
+			opts.Avg = d
 		case arg == "--view":
 			i++
 			if i >= len(args) {
@@ -252,6 +321,15 @@ func parseArgs(args []string) (cliOptions, error) {
 	if opts.View == "all" {
 		opts.View = "summary"
 	}
+	if opts.Web && opts.JSON {
+		return opts, errors.New("--web cannot be combined with --json")
+	}
+	if opts.Listen != "" && !opts.Web {
+		return opts, errors.New("--listen is only supported with --web")
+	}
+	if opts.Avg > 0 && !opts.Web {
+		return opts, errors.New("--avg is only supported with --web")
+	}
 	switch opts.View {
 	case "server", "wt", "system", "network", "repl", "summary":
 	default:
@@ -281,7 +359,7 @@ func parseTimeArg(value string) (time.Time, error) {
 }
 
 func usage(w *os.File) {
-	fmt.Fprintln(w, "usage: ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--verbose] [--pressure]")
+	fmt.Fprintln(w, "usage: ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--listen ADDR] [--verbose] [--pressure]")
 }
 
 func max(a, b int) int {

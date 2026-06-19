@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Title }}</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>ftdcstat web UI</h1>
+          <div class="subtitle" id="subtitle">Loading capture metadata...</div>
+        </div>
+        <div class="meta-pills" id="top-meta"></div>
+      </div>
+      <div class="zoom-bar">
+        <div class="zoom-status subtitle" id="zoom-status">Zoom: full loaded range</div>
+        <button id="reset-zoom" class="alt" type="button" hidden>Reset zoom</button>
+      </div>
+    </section>
+
+    <div class="layout">
+      <aside class="sidebar panel">
+        <div>
+          <h2>Metrics</h2>
+          <p class="hint subtitle">Filter metrics, then select which series are visible in each section chart.</p>
+        </div>
+        <input id="search" class="search" type="search" placeholder="Search metrics or sections">
+        <div class="actions">
+          <button id="defaults">Select defaults</button>
+          <button id="clear" class="alt">Clear</button>
+        </div>
+        <div class="metric-groups" id="metric-groups"></div>
+      </aside>
+
+      <main class="content">
+        <section class="panel metadata-wrap">
+          <pre class="metadata-panel" id="metadata"></pre>
+        </section>
+        <section id="warnings"></section>
+        <section id="charts"></section>
+      </main>
+    </div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

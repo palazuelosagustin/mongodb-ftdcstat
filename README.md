@@ -1,7 +1,7 @@
 # ftdcstat
 
 `ftdcstat` reads a MongoDB `diagnostic.data` directory and prints FTDC metrics
-as terminal-friendly tables.
+as terminal-friendly tables or serves a local plotting UI.
 
 ## Build
 
@@ -12,7 +12,7 @@ go build -o ftdcstat ./cmd/ftdcstat
 ## Usage
 
 ```bash
-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--verbose] [--pressure]
+ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--listen ADDR] [--verbose] [--pressure]
 ```
 
 The input is a directory, not a single FTDC file. The tool discovers
@@ -71,6 +71,17 @@ the selected interval.
 With the default MongoDB `diagnosticDataCollectionPeriodMillis=1000`,
 `--interval 60` usually means about one line per minute.
 
+### `--avg DURATION`
+
+`--avg` averages derived rows into fixed time buckets before plotting them in the
+local web UI.
+
+```bash
+ftdcstat diagnostic.data --web --view summary --avg 5m
+```
+
+The bucket size uses Go duration syntax such as `30s`, `5m`, or `1h`. `--avg` is currently intended for `--web` mode, where it reduces browser-side point count for large captures.
+
 ### `--device DEVICE`
 
 Filters disk-derived fields to a single device.
@@ -110,6 +121,72 @@ generic replica-set node labels to real member names. Each row includes grouped
 section objects such as `replication` and `server`; `replication.lagS` contains
 the per-node lag values, `replication.majLagS` contains the majority commit lag,
 and unavailable lag values are `null`.
+
+### `--web`
+
+`--web` starts a local HTTP server instead of printing the terminal table.
+
+```bash
+ftdcstat diagnostic.data --web
+ftdcstat diagnostic.data --web --view summary --avg 5m
+ftdcstat diagnostic.data --web --from "2026-06-04T19:00:00" --to "2026-06-04T20:00:00"
+```
+
+Behavior:
+
+```text
+binds to 127.0.0.1 on a random available port by default
+prints the local URL to stdout
+reuses the existing FTDC parsing and derived-row pipeline
+keeps --view, --from, --to, --verbose, and --pressure semantics
+groups charts by the same logical sections as the selected view
+```
+
+Example stdout:
+
+```text
+Serving ftdcstat web UI at http://127.0.0.1:49231
+```
+
+For large captures, prefer combining `--web` with `--avg` or with `--from` and
+`--to` to keep browser rendering responsive.
+
+When the plotted dataset is large, the tool warns:
+
+```text
+Large chart dataset detected. Consider using --avg 5m or --from/--to for better browser performance.
+```
+
+`--web` cannot be combined with `--json`.
+
+The local JSON API is exposed through `/api/metadata` and `/api/data`. Static
+assets are served from `/app.js` and `/style.css`.
+
+The first version serves a small offline UI from embedded assets and exposes:
+
+```text
+GET /              -> embedded static index.html
+GET /app.js        -> embedded JavaScript
+GET /style.css     -> embedded CSS
+GET /api/metadata  -> capture/header metadata
+GET /api/data      -> selected derived rows or chart data
+```
+
+`/api/metadata` includes `headerText`, a terminal-style preformatted header
+that mirrors the CLI report header as closely as possible. The frontend renders
+it in a monospace `<pre>` block instead of dashboard cards.
+
+Charts are grouped by the same logical sections as the selected view. Hovering a
+section chart shows a Grafana-like tooltip with the exact UTC timestamp and the
+visible series values at that timestamp.
+
+### `--listen ADDR`
+
+Overrides the default local bind address used by `--web`:
+
+```bash
+ftdcstat diagnostic.data --web --listen 127.0.0.1:8080
+```
 
 ### `--verbose`
 
