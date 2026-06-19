@@ -163,7 +163,11 @@ func runWebOutput(w io.Writer, input captureInput, warnings []model.Warning, ren
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "Serving ftdcstat web UI at %s\n", address)
+	renderOpts.WebURL = address
+	if err := render.Render(w, input.metadata, warnings, rows, renderOpts); err != nil {
+		_ = server.Close()
+		return err
+	}
 	return server.Serve()
 }
 

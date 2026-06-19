@@ -17,6 +17,7 @@ import (
 type Options struct {
 	View         string
 	JSON         bool
+	WebURL       string
 	Verbose      bool
 	Pressure     bool
 	TimeLocation *time.Location
@@ -76,7 +77,7 @@ func renderTableRows(w io.Writer, metadata model.Metadata, rows []derive.Row, op
 	if loc == nil {
 		loc = time.UTC
 	}
-	renderHeader(w, metadata, rsInfo, loc)
+	renderHeader(w, metadata, rsInfo, loc, opts.WebURL)
 	renderer := newStreamingRenderer(w, layout.Columns, layout.Sections, loc)
 	for _, row := range rows {
 		if err := renderer.RenderRow(row); err != nil {
@@ -186,7 +187,7 @@ func nodeLabelNumber(label string) (int, bool) {
 	return n, true
 }
 
-func renderHeader(w io.Writer, metadata model.Metadata, rsInfo derive.ReplSetInfo, loc *time.Location) {
+func renderHeader(w io.Writer, metadata model.Metadata, rsInfo derive.ReplSetInfo, loc *time.Location, webURL string) {
 	build, _ := metadata.LatestDoc("buildInfo")
 	host, _ := metadata.LatestDoc("hostInfo")
 	cmd, _ := metadata.LatestDoc("getCmdLineOpts")
@@ -218,12 +219,20 @@ func renderHeader(w io.Writer, metadata model.Metadata, rsInfo derive.ReplSetInf
 	}
 	fmt.Fprintln(w)
 	renderNetworkHeader(w, metadata)
+	if webURL != "" {
+		renderWebUIHeader(w, webURL)
+	}
 	fmt.Fprintln(w)
 }
 
 func renderNetworkHeader(w io.Writer, metadata model.Metadata) {
 	fmt.Fprintln(w, "network")
 	fmt.Fprintf(w, "  maxConn: %s\n", metadata.NetworkMaxConnDisplay())
+}
+
+func renderWebUIHeader(w io.Writer, webURL string) {
+	fmt.Fprintln(w, "webUI")
+	fmt.Fprintf(w, "  url: %s\n", webURL)
 }
 
 func renderHostInfo(w io.Writer, host map[string]any) {
@@ -526,7 +535,7 @@ func NewStreamingRenderer(w io.Writer, metadata model.Metadata, opts Options) (*
 	if loc == nil {
 		loc = time.UTC
 	}
-	renderHeader(w, metadata, rsInfo, loc)
+	renderHeader(w, metadata, rsInfo, loc, opts.WebURL)
 	return newStreamingRenderer(w, layout.Columns, layout.Sections, loc), nil
 }
 

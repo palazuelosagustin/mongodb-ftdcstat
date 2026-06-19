@@ -77,8 +77,9 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"serverStatus.metrics.repl.buffer.apply.count",
 		"`getCmdLineOpts` prints the parsed startup config",
 		"getCmdLineOpts parsed config",
-		"Serving ftdcstat web UI at http://127.0.0.1:",
-		"`--web` starts a local HTTP server instead of printing the terminal table",
+		"`--web` starts a local HTTP server and still prints the normal terminal table",
+		"embeds the local URL in a `webUI` header section",
+		"webUI\n  url: http://127.0.0.1:",
 		"`--web` cannot be combined with `--json`",
 		"`--avg` is currently intended for `--web` mode",
 		"`/api/metadata`",
@@ -106,6 +107,9 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 	}
 	if strings.Contains(text, "It is also included with\n`--view server`") {
 		t.Fatal("README should not document replication as part of --view server")
+	}
+	if strings.Contains(text, "`--web` starts a local HTTP server instead of printing the terminal table") {
+		t.Fatal("README should document that --web still prints the terminal table")
 	}
 	if strings.Contains(text, "getCmdLineOpts argv") {
 		t.Fatal("README should document parsed getCmdLineOpts config, not raw argv")

@@ -124,7 +124,7 @@ and unavailable lag values are `null`.
 
 ### `--web`
 
-`--web` starts a local HTTP server instead of printing the terminal table.
+`--web` starts a local HTTP server and still prints the normal terminal table.
 
 ```bash
 ftdcstat diagnostic.data --web
@@ -136,7 +136,7 @@ Behavior:
 
 ```text
 binds to 127.0.0.1 on a random available port by default
-prints the local URL to stdout
+prints the normal vmstat-like report and embeds the local URL in a `webUI` header section
 reuses the existing FTDC parsing and derived-row pipeline
 keeps --view, --from, --to, --verbose, and --pressure semantics
 groups charts by the same logical sections as the selected view
@@ -145,7 +145,26 @@ groups charts by the same logical sections as the selected view
 Example stdout:
 
 ```text
-Serving ftdcstat web UI at http://127.0.0.1:49231
+buildInfo
+  ...
+
+rsInfo
+  ...
+
+hostInfo
+  ...
+
+getCmdLineOpts
+  ...
+
+network
+  maxConn: 409
+
+webUI
+  url: http://127.0.0.1:49231
+
+datetime                  | ...
+2026-06-04T19:00:00Z      | ...
 ```
 
 For large captures, prefer combining `--web` with `--avg` or with `--from` and
