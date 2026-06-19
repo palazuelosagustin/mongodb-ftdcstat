@@ -10,8 +10,6 @@ type metricDefinition struct {
 }
 
 var metricRegistry = []metricDefinition{
-	{Section: "server", Column: "rsState", Format: "text", JSONName: "rsState"},
-	{Section: "server", Column: "conn", Format: "integer", JSONName: "conn"},
 	{Section: "server", Column: "qTot", Format: "integer", JSONName: "qTot"},
 	{Section: "server", Column: "ins/s", Format: "rate", JSONName: "ins/s"},
 	{Section: "server", Column: "qry/s", Format: "rate", JSONName: "qry/s"},
@@ -23,6 +21,7 @@ var metricRegistry = []metricDefinition{
 	{Section: "server", Column: "wLatS", Format: "seconds", JSONName: "wLatS"},
 	{Section: "server", Column: "cLatS", Format: "seconds", JSONName: "cLatS"},
 
+	{Section: "replication", Column: "rsState", Format: "text", JSONName: "rsState"},
 	{Section: "replication", Column: "majLagS", Format: "lag", JSONName: "majLagS"},
 	{Section: "replication", Column: "hbMs", Format: "millis", JSONName: "hbMs"},
 	{Section: "replication", Column: "applyOps/s", Format: "rate", JSONName: "applyOps/s"},
@@ -134,7 +133,7 @@ func networkColumns(verbose bool) []string {
 func replicationColumns(nodeLabels []string, verbose bool) []string {
 	cols := []string{"lagSLabel"}
 	cols = append(cols, nodeLabels...)
-	cols = append(cols, "majLagS")
+	cols = append(cols, "majLagS", "rsState")
 	if verbose {
 		cols = append(cols, "hbMs", "applyOps/s", "applyBufCnt", "applyBufMB")
 	}

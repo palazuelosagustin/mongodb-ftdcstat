@@ -453,7 +453,7 @@ func defaultMetricForView(view, section, column string) bool {
 	case "replication":
 		return column == "majLagS" || strings.HasPrefix(column, "node")
 	case "server":
-		return inSet(column, "qTot", "rLatS", "wLatS", "cLatS", "conn")
+		return inSet(column, "qTot", "rLatS", "wLatS", "cLatS")
 	case "network":
 		return inSet(column, "activeConn", "totalCreated/s", "queuedConn", "rejConn/s")
 	case "system":

@@ -32,7 +32,7 @@ Default: `summary`.
 Views:
 
 ```text
-server   Replica-set status plus MongoDB serverStatus counters, latency, queues, connections
+server   MongoDB serverStatus counters, latency, and queues
 wt       WiredTiger cache, eviction, checkpoint, and ticket metrics
 system   CPU, memory, and disk metrics
 network  Connection activity and network-establishment diagnostics
@@ -374,6 +374,7 @@ node1    replication lag for rsInfo node1 in seconds, derived
 node2    replication lag for rsInfo node2 in seconds, derived
 nodeN    replication lag for rsInfo nodeN in seconds, derived
 majLagS   majority commit lag in seconds, derived
+rsState    current node replica-set state for that row, derived
 hbMs      average member ping latency in milliseconds, verbose only
 applyOps/s   replication apply throughput in ops/sec, verbose only
 applyBufCnt replication apply buffer item count, verbose only
@@ -386,7 +387,7 @@ Sources: `replSetGetStatus.members[].pingMs`,
 `serverStatus.metrics.repl.buffer.apply.sizeBytes`.
 
 With `--verbose` on `--view repl`, the replication columns continue after
-`majLagS` in the order shown above.
+`majLagS` and `rsState` in the order shown above.
 
 Table column names are always generic `node1..nodeN` labels, never replica-set
 hostnames. The real member names are listed in the `rsInfo` header. The leading
@@ -416,8 +417,6 @@ optime data.
 ### `server` View
 
 ```text
-rsState  current node replica-set state for that row, derived
-conn     current connections, raw
 qTot     global lock queued operations total, raw
 ins/s    inserts per second, rate
 qry/s    queries per second, rate
@@ -431,7 +430,8 @@ cLatS    average command latency in seconds, derived
 ```
 
 The old scalar `server.lagS` column was removed to avoid duplicating the
-per-member `replication` section. `rsState` is the first `server` column.
+per-member `replication` section. Connection activity now lives in the
+`network` section via `activeConn`, `idleConn`, and `totalCreated/s`.
 
 Latency formula:
 
@@ -675,9 +675,8 @@ Missing fields render as `-` in terminal output and `null` in JSON.
 ### `repl` View
 
 `--view repl` is a compatibility alias that renders only the `replication`
-section, including per-node lag columns and `majLagS`. It does not render
-`server`, `system`, or `wiredTiger` columns. `rsState` remains in the `server`
-section when using `--view server` or `--view summary`.
+section, including per-node lag columns, `majLagS`, and `rsState`. It does not
+render `server`, `system`, or `wiredTiger` columns.
 
 ## Numeric Formatting
 

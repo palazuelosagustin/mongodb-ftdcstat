@@ -349,14 +349,14 @@ func TestSummaryViewIsSingleWideTableAndRepeatsHeader(t *testing.T) {
 	if strings.Contains(headerLine, "h1:27017") || strings.Contains(headerLine, "h2:27017") {
 		t.Fatalf("replication columns should not use hostnames:\n%s", out)
 	}
-	if !strings.Contains(headerLine, "rsState conn qTot") {
-		t.Fatalf("server section should start with rsState conn qTot:\n%s", out)
+	if !strings.Contains(headerLine, "node1 node2 majLagS rsState") {
+		t.Fatalf("replication section should end with majLagS rsState:\n%s", out)
 	}
 	if !strings.Contains(headerLine, "activeConn idleConn totalCreated/s") {
 		t.Fatalf("network section should follow server columns:\n%s", out)
 	}
-	if strings.Contains(headerLine, "node1 node2 rsState") {
-		t.Fatalf("rsState should not be in replication:\n%s", out)
+	if strings.Contains(headerLine, " conn ") || strings.Contains(headerLine, " conn|") || strings.Contains(headerLine, "| conn ") {
+		t.Fatalf("server section should not include conn:\n%s", out)
 	}
 	for _, want := range []string{"rLatS", "wLatS", "cLatS"} {
 		if !strings.Contains(headerLine, want) {
@@ -368,8 +368,8 @@ func TestSummaryViewIsSingleWideTableAndRepeatsHeader(t *testing.T) {
 			t.Fatalf("server section should not include old latency column %q:\n%s", old, out)
 		}
 	}
-	if !strings.Contains(headerLine, "datetime") || !strings.Contains(headerLine, "lagS node1 node2 majLagS") || !strings.Contains(headerLine, "rsState conn qTot") {
-		t.Fatalf("replication should include lagS, node lags, majLagS and server should start with rsState:\n%s", out)
+	if !strings.Contains(headerLine, "datetime") || !strings.Contains(headerLine, "lagS node1 node2 majLagS rsState") || !strings.Contains(headerLine, "qTot") {
+		t.Fatalf("replication should include lagS, node lags, majLagS, rsState and server should start with qTot:\n%s", out)
 	}
 	if !strings.Contains(headerLine, "activeConn idleConn totalCreated/s") {
 		t.Fatalf("summary view should include network columns after server:\n%s", out)
@@ -419,7 +419,7 @@ func TestVerboseReplViewIncludesReplicationMetrics(t *testing.T) {
 			t.Fatalf("repl verbose output should not contain %q:\n%s", forbidden, out)
 		}
 	}
-	if !strings.Contains(headerLine, "lagS node1 node2 majLagS hbMs applyOps/s applyBufCnt applyBufMB") {
+	if !strings.Contains(headerLine, "lagS node1 node2 majLagS rsState hbMs applyOps/s applyBufCnt applyBufMB") {
 		t.Fatalf("unexpected verbose repl header order:\n%s", headerLine)
 	}
 }
@@ -903,11 +903,11 @@ func TestServerViewIncludesReplicationAndServerSections(t *testing.T) {
 	out := buf.String()
 	labelLine, headerLine := firstTableHeader(out)
 	assertSectionOrder(t, labelLine, []string{"replication", "server"})
-	if strings.Count(labelLine, "|") != 2 || !strings.Contains(headerLine, "datetime") || !strings.Contains(headerLine, "lagS node1 node2") || !strings.Contains(headerLine, "rsState conn qTot") {
+	if strings.Count(labelLine, "|") != 2 || !strings.Contains(headerLine, "datetime") || !strings.Contains(headerLine, "lagS node1 node2 majLagS rsState") || !strings.Contains(headerLine, "qTot") {
 		t.Fatalf("server view should render datetime | replication | server:\n%s", out)
 	}
-	if strings.Contains(headerLine, "node1 node2 rsState") {
-		t.Fatalf("rsState should not appear in replication:\n%s", out)
+	if strings.Contains(headerLine, " conn ") || strings.Contains(headerLine, " conn|") || strings.Contains(headerLine, "| conn ") {
+		t.Fatalf("server view should not include conn:\n%s", out)
 	}
 }
 
@@ -931,8 +931,11 @@ func TestReplViewRendersSingleReplicationSection(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if strings.Contains(out, " rsState") || strings.Contains(out, "rsState conn") {
-		t.Fatalf("repl view should not include server columns:\n%s", out)
+	if !strings.Contains(out, "rsState") {
+		t.Fatalf("repl view should include rsState in replication output:\n%s", out)
+	}
+	if strings.Contains(out, " conn ") || strings.Contains(out, " conn|") || strings.Contains(out, "| conn ") {
+		t.Fatalf("repl view should not include conn:\n%s", out)
 	}
 	lines := strings.Split(out, "\n")
 	var headerLine string
@@ -945,12 +948,15 @@ func TestReplViewRendersSingleReplicationSection(t *testing.T) {
 	if headerLine == "" {
 		t.Fatalf("repl view missing column header:\n%s", out)
 	}
-	if !strings.Contains(headerLine, "lagS node1 node2 majLagS") {
-		t.Fatalf("repl view should render lagS node1 node2 majLagS columns:\n%s", out)
+	if !strings.Contains(headerLine, "lagS node1 node2 majLagS rsState") {
+		t.Fatalf("repl view should render lagS node1 node2 majLagS rsState columns:\n%s", out)
 	}
 	values := replicationDataValues(t, out)
 	if values["majLagS"] != "0.0" {
 		t.Fatalf("repl view majLagS=%q", values["majLagS"])
+	}
+	if values["rsState"] != "PRIMARY" {
+		t.Fatalf("repl view rsState=%q", values["rsState"])
 	}
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -1158,13 +1164,14 @@ func replicationDataValues(t *testing.T, out string) map[string]string {
 			t.Fatalf("expected replication | ... data row:\n%s", out)
 		}
 		fields := strings.Fields(strings.TrimSpace(parts[1]))
-		if len(fields) < 2 {
-			t.Fatalf("expected node lag and majLagS values:\n%s", out)
+		if len(fields) < 3 {
+			t.Fatalf("expected node lag, majLagS, and rsState values:\n%s", out)
 		}
 		values := map[string]string{
-			"majLagS": fields[len(fields)-1],
+			"majLagS": fields[len(fields)-2],
+			"rsState": fields[len(fields)-1],
 		}
-		for i, field := range fields[:len(fields)-1] {
+		for i, field := range fields[:len(fields)-2] {
 			values[fmt.Sprintf("node%d", i+1)] = field
 		}
 		return values
@@ -1192,11 +1199,14 @@ func TestJSONSummaryViewIncludesMajLagSInReplication(t *testing.T) {
 		t.Fatalf("summary JSON should not contain repl section: %#v", gotRow)
 	}
 	server := gotRow["server"].(map[string]any)
-	if server["rsState"] != "PRIMARY" {
-		t.Fatalf("server.rsState=%#v", server["rsState"])
+	if replication["rsState"] != "PRIMARY" {
+		t.Fatalf("replication.rsState=%#v", replication["rsState"])
 	}
-	if _, ok := replication["rsState"]; ok {
-		t.Fatalf("replication should not contain rsState: %#v", replication)
+	if _, ok := server["rsState"]; ok {
+		t.Fatalf("server should not contain rsState: %#v", server)
+	}
+	if _, ok := server["conn"]; ok {
+		t.Fatalf("server should not contain conn: %#v", server)
 	}
 }
 
@@ -1217,6 +1227,9 @@ func TestJSONReplViewUsesReplicationSectionOnly(t *testing.T) {
 	replication := gotRow["replication"].(map[string]any)
 	if replication["majLagS"] != float64(0) {
 		t.Fatalf("replication.majLagS=%#v", replication["majLagS"])
+	}
+	if replication["rsState"] != "PRIMARY" {
+		t.Fatalf("replication.rsState=%#v", replication["rsState"])
 	}
 	if _, ok := gotRow["server"]; ok {
 		t.Fatalf("repl JSON should not contain server section: %#v", gotRow)
@@ -1255,12 +1268,15 @@ func TestJSONIncludesRSInfoMappingAndReplicationGroup(t *testing.T) {
 	if replication["majLagS"] != float64(0) {
 		t.Fatalf("replication.majLagS=%#v", replication["majLagS"])
 	}
-	if _, ok := replication["rsState"]; ok {
-		t.Fatalf("replication should not contain rsState: %#v", replication)
-	}
 	server := gotRow["server"].(map[string]any)
-	if server["rsState"] != "PRIMARY" {
-		t.Fatalf("server.rsState=%#v", server["rsState"])
+	if replication["rsState"] != "PRIMARY" {
+		t.Fatalf("replication.rsState=%#v", replication["rsState"])
+	}
+	if _, ok := server["rsState"]; ok {
+		t.Fatalf("server should not contain rsState: %#v", server)
+	}
+	if _, ok := server["conn"]; ok {
+		t.Fatalf("server should not contain conn: %#v", server)
 	}
 }
 

@@ -95,8 +95,8 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 			t.Fatalf("README missing %q", want)
 		}
 	}
-	if strings.Contains(text, "### `repl` View\n\n```text\nrsState") {
-		t.Fatal("README should not document rsState as part of the repl section")
+	if !strings.Contains(text, "`--view repl` is a compatibility alias that renders only the `replication`\nsection, including per-node lag columns, `majLagS`, and `rsState`.") {
+		t.Fatal("README should document rsState as part of the replication/repl section")
 	}
 	if strings.Contains(text, "getCmdLineOpts argv") {
 		t.Fatal("README should document parsed getCmdLineOpts config, not raw argv")
