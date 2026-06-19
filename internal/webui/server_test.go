@@ -308,13 +308,100 @@ func TestBuildDatasetSummaryKeepsServerSplitInPlace(t *testing.T) {
 		TimeLocation: time.UTC,
 	})
 
-	wantPrefix := []string{"replication", "server / Commands", "server / Latency", "network", "system / CPU", "system / Memory", "system / Disks", "wiredTiger"}
+	wantPrefix := []string{
+		"replication",
+		"server / Commands",
+		"server / Latency",
+		"network",
+		"system / CPU",
+		"system / Memory",
+		"system / Disks",
+		"wiredTiger / Tickets",
+		"wiredTiger / Per-second rates",
+		"wiredTiger / Checkpoint time",
+		"wiredTiger / Percentages",
+	}
 	got := sectionNames(dataset.Metadata.Sections)
 	if len(got) < len(wantPrefix) {
 		t.Fatalf("summary sections too short: %v", got)
 	}
 	if strings.Join(got[:len(wantPrefix)], "|") != strings.Join(wantPrefix, "|") {
 		t.Fatalf("summary sections=%v want prefix=%v", got, wantPrefix)
+	}
+}
+
+func TestBuildDatasetSplitsWiredTigerDashboardSections(t *testing.T) {
+	metadata := model.NewMetadata()
+	row := derive.Row{
+		Time: time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC),
+		Values: map[string]any{
+			"rdTkt":        32.0,
+			"wrTkt":        28.0,
+			"wtRdMB/s":     4.5,
+			"wtWrMB/s":     7.5,
+			"evict/s":      8.0,
+			"appEvict/s":   6.0,
+			"evictWalks/s": 1.0,
+			"evictBusy/s":  0.5,
+			"ckptPages/s":  3.0,
+			"hsInsert/s":   2.0,
+			"hsRead/s":     1.5,
+			"hsWriteMB/s":  0.8,
+			"ckptMS":       50.0,
+			"wtCache%":     55.0,
+			"dirty%":       4.0,
+			"cacheMB":      1024.0,
+			"dirtyMB":      128.0,
+			"updatesMB":    64.0,
+		},
+	}
+
+	dataset := BuildDataset(metadata, nil, []derive.Row{row}, render.Options{View: "wt", Verbose: true}, Options{
+		View:         "wt",
+		TimeLocation: time.UTC,
+	})
+
+	wantSections := []string{
+		"wiredTiger / Tickets",
+		"wiredTiger / Per-second rates",
+		"wiredTiger / Checkpoint time",
+		"wiredTiger / Percentages",
+		"wiredTiger / MiB",
+	}
+	if got := sectionNames(dataset.Metadata.Sections); strings.Join(got, "|") != strings.Join(wantSections, "|") {
+		t.Fatalf("sections=%v want=%v", got, wantSections)
+	}
+	if got := MetricNames(dataset.Metadata.Sections[0]); strings.Join(got, "|") != strings.Join([]string{"rdTkt", "wrTkt"}, "|") {
+		t.Fatalf("ticket metrics=%v", got)
+	}
+	if got := MetricNames(dataset.Metadata.Sections[1]); strings.Join(got, "|") != strings.Join([]string{"appEvict/s", "ckptPages/s", "evict/s", "evictBusy/s", "evictWalks/s", "hsInsert/s", "hsRead/s", "hsWriteMB/s", "wtRdMB/s", "wtWrMB/s"}, "|") {
+		t.Fatalf("rate metrics=%v", got)
+	}
+	if got := MetricNames(dataset.Metadata.Sections[2]); strings.Join(got, "|") != strings.Join([]string{"ckptMS"}, "|") {
+		t.Fatalf("checkpoint metrics=%v", got)
+	}
+	if got := MetricNames(dataset.Metadata.Sections[3]); strings.Join(got, "|") != strings.Join([]string{"dirty%", "wtCache%"}, "|") {
+		t.Fatalf("percentage metrics=%v", got)
+	}
+	if got := MetricNames(dataset.Metadata.Sections[4]); strings.Join(got, "|") != strings.Join([]string{"cacheMB", "dirtyMB", "updatesMB"}, "|") {
+		t.Fatalf("mib metrics=%v", got)
+	}
+
+	first := dataset.Data.Rows[0].Sections
+	if _, ok := first["wiredTiger / Tickets"]["rdTkt"]; !ok {
+		t.Fatalf("wiredTiger / Tickets missing rdTkt: %#v", first["wiredTiger / Tickets"])
+	}
+	if _, ok := first["wiredTiger / Per-second rates"]["evictWalks/s"]; !ok {
+		t.Fatalf("wiredTiger / Per-second rates missing evictWalks/s: %#v", first["wiredTiger / Per-second rates"])
+	}
+	if _, ok := first["wiredTiger / Checkpoint time"]["ckptMS"]; !ok {
+		t.Fatalf("wiredTiger / Checkpoint time missing ckptMS: %#v", first["wiredTiger / Checkpoint time"])
+	}
+	if _, ok := first["wiredTiger / Percentages"]["wtCache%"]; !ok {
+		t.Fatalf("wiredTiger / Percentages missing wtCache%%: %#v", first["wiredTiger / Percentages"])
+	}
+	if _, ok := first["wiredTiger / MiB"]["cacheMB"]; !ok {
+		t.Fatalf("wiredTiger / MiB missing cacheMB: %#v", first["wiredTiger / MiB"])
 	}
 }
 

@@ -477,6 +477,11 @@ func buildDashboardSections(desc render.ViewDescription, view string) []Section 
 		{name: "system / Memory", source: "system", defaultInAll: false, columns: []string{"residentMB", "virtualMB", "swapIn/s", "swapOut/s"}},
 		{name: "system / Disks", source: "system", defaultInAll: false, columns: []string{"r/s", "w/s", "rkB/s", "wkB/s", "awaitS", "r_awaitS", "w_awaitS", "aqu-sz", "util%"}},
 		{name: "system / PSI", source: "pressure", defaultInAll: true, columns: []string{"psiCpuSome%", "psiMemSome%", "psiMemFull%", "psiIoSome%", "psiIoFull%"}},
+		{name: "wiredTiger / Tickets", source: "wiredTiger", defaultInAll: false, columns: []string{"rdTkt", "wrTkt"}},
+		{name: "wiredTiger / Per-second rates", source: "wiredTiger", defaultInAll: false, columns: []string{"wtRdMB/s", "wtWrMB/s", "evict/s", "appEvict/s", "evictWalks/s", "evictBusy/s", "ckptPages/s", "hsInsert/s", "hsRead/s", "hsWriteMB/s"}},
+		{name: "wiredTiger / Checkpoint time", source: "wiredTiger", defaultInAll: false, columns: []string{"ckptMS"}},
+		{name: "wiredTiger / Percentages", source: "wiredTiger", defaultInAll: false, columns: []string{"wtCache%", "dirty%"}},
+		{name: "wiredTiger / MiB", source: "wiredTiger", defaultInAll: false, columns: []string{"cacheMB", "dirtyMB", "updatesMB"}},
 	}
 
 	usedColumns := map[string]map[string]bool{}
@@ -516,8 +521,8 @@ func buildDashboardSections(desc render.ViewDescription, view string) []Section 
 
 	var out []Section
 	for _, section := range desc.Sections {
-		if section.Name == "server" || section.Name == "system" || section.Name == "pressure" {
-			if section.Name == "server" || section.Name == "system" {
+		if section.Name == "server" || section.Name == "system" || section.Name == "pressure" || section.Name == "wiredTiger" {
+			if section.Name == "server" || section.Name == "system" || section.Name == "wiredTiger" {
 				appendSplitSections()
 				for _, split := range splitOut {
 					if strings.HasPrefix(split.Name, section.Name+" /") {
@@ -549,7 +554,7 @@ func buildDashboardSections(desc render.ViewDescription, view string) []Section 
 
 func hasDashboardSplitCandidates(sections []render.ViewSection) bool {
 	for _, section := range sections {
-		if section.Name == "server" || section.Name == "system" || section.Name == "pressure" {
+		if section.Name == "server" || section.Name == "system" || section.Name == "pressure" || section.Name == "wiredTiger" {
 			return true
 		}
 	}
@@ -581,6 +586,16 @@ func defaultMetricForView(view, section, column string) bool {
 		return false
 	case "wiredTiger":
 		return inSet(column, "wtCache%", "dirty%", "evict/s", "appEvict/s", "ckptMS", "rdTkt", "wrTkt")
+	case "wiredTiger / Tickets":
+		return inSet(column, "rdTkt", "wrTkt")
+	case "wiredTiger / Per-second rates":
+		return inSet(column, "evict/s", "appEvict/s")
+	case "wiredTiger / Checkpoint time":
+		return column == "ckptMS"
+	case "wiredTiger / Percentages":
+		return inSet(column, "wtCache%", "dirty%")
+	case "wiredTiger / MiB":
+		return false
 	default:
 		return false
 	}

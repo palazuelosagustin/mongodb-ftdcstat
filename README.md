@@ -180,7 +180,11 @@ Charts are grouped by the same logical sections as the selected view. For
 server metrics, the web UI splits charts into `server / Commands` and `server / Latency`.
 For system metrics, the web UI splits charts into `system / CPU`, `system / Memory`,
 `system / Disks`, and `system / PSI` when those metric groups are present in the
-loaded data. Hovering a section chart shows a Grafana-like tooltip with the exact UTC timestamp and the
+loaded data. For WiredTiger metrics, the web UI splits charts into
+`wiredTiger / Tickets`, `wiredTiger / Per-second rates`,
+`wiredTiger / Checkpoint time`, `wiredTiger / Percentages`, and
+`wiredTiger / MiB` when those metric groups are present in the loaded data.
+Hovering a section chart shows a Grafana-like tooltip with the exact UTC timestamp and the
 visible series values at that timestamp.
 
 ### `--listen ADDR`
