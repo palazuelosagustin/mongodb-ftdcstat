@@ -391,11 +391,11 @@ func parseArgs(args []string) (cliOptions, error) {
 	if opts.View == "all" {
 		opts.View = "summary"
 	}
-	if opts.Web && opts.JSON {
-		return opts, errors.New("--web cannot be combined with --json")
+	if opts.JSON && (opts.Web || opts.TUI) {
+		return opts, errors.New("--json cannot be combined with --web or --tui")
 	}
-	if opts.Listen != "" && !opts.Web {
-		return opts, errors.New("--listen is only supported with --web")
+	if opts.Listen != "" && !(opts.Web || opts.TUI) {
+		return opts, errors.New("--listen is only supported with --web or --tui")
 	}
 	if opts.Avg > 0 && (opts.Avg < time.Minute || opts.Avg > 15*time.Minute) {
 		return opts, errors.New("--avg duration must be between 1m and 15m")
