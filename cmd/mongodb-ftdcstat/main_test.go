@@ -217,3 +217,29 @@ func TestBufferedRowCollectorOnlyUsedForJSONPath(t *testing.T) {
 		t.Fatalf("collector rows=%d", len(collector.snapshot()))
 	}
 }
+
+func TestParseArgsAcceptsTUIFlag(t *testing.T) {
+	opts, err := parseArgs([]string{"diagnostic.data", "--tui"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.TUI {
+		t.Fatal("expected --tui to enable cliOptions.TUI")
+	}
+	if opts.Web {
+		t.Fatal("expected --tui not to imply --web during phase 1")
+	}
+}
+
+func TestParseArgsLeavesExistingWebFlagBehavior(t *testing.T) {
+	opts, err := parseArgs([]string{"diagnostic.data", "--web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.Web {
+		t.Fatal("expected --web to enable cliOptions.Web")
+	}
+	if opts.TUI {
+		t.Fatal("expected --web not to imply --tui")
+	}
+}

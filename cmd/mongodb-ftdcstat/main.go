@@ -27,6 +27,7 @@ type cliOptions struct {
 	Device      string
 	JSON        bool
 	Web         bool
+	TUI         bool
 	Listen      string
 	Verbose     bool
 	Pressure    bool
@@ -273,6 +274,8 @@ func parseArgs(args []string) (cliOptions, error) {
 			opts.JSON = true
 		case arg == "--web":
 			opts.Web = true
+		case arg == "--tui":
+			opts.TUI = true
 		case arg == "--verbose":
 			opts.Verbose = true
 		case arg == "--pressure":
@@ -429,7 +432,7 @@ func parseTimeArg(value string) (time.Time, error) {
 }
 
 func usage(w *os.File, name string) {
-	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--listen ADDR] [--verbose] [--pressure]\n", name)
+	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]\n", name)
 }
 
 func printError(w io.Writer, err error) {
