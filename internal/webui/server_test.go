@@ -142,7 +142,7 @@ func TestNewHandlerServesMetadataDataAndIndex(t *testing.T) {
 	}
 
 	styleResp := serveTestRequest(t, server, "GET /style.css HTTP/1.1\r\nHost: localhost\r\n\r\n")
-	if !strings.Contains(styleResp, "200 OK") || !strings.Contains(styleResp, ".metadata-panel") {
+	if !strings.Contains(styleResp, "200 OK") || strings.Contains(styleResp, ".metadata-panel") {
 		t.Fatalf("style response=%q", styleResp)
 	}
 
@@ -173,8 +173,11 @@ func TestNewHandlerServesMetadataDataAndIndex(t *testing.T) {
 	if metadataResp.View != "network" {
 		t.Fatalf("view=%s", metadataResp.View)
 	}
-	if !strings.Contains(metadataResp.HeaderText, "network") || !strings.Contains(metadataResp.HeaderText, "maxConn") {
+	if !strings.Contains(metadataResp.HeaderText, "Report") || !strings.Contains(metadataResp.HeaderText, "network") {
 		t.Fatalf("headerText=%q", metadataResp.HeaderText)
+	}
+	if strings.Contains(rootResp, `id="metadata"`) {
+		t.Fatalf("root page should not render CLI header metadata panel: %q", rootResp)
 	}
 
 	var dataResp DataResponse

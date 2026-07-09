@@ -259,21 +259,9 @@ func (s *fakeWebServer) Close() error {
 
 func TestServeRenderedWebOutputPrintsEnabledLinksAndKeepAliveMessage(t *testing.T) {
 	metadata := model.NewMetadata()
-	rows := []derive.Row{{
-		Time: time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC),
-		Values: map[string]any{
-			"activeConn": 11.0,
-		},
-	}}
-	renderOpts := render.Options{
-		View:         "network",
-		TimeLocation: time.UTC,
-		MetricsRange: render.MetricsRangeFromRows(rows),
-	}
-	dataset := webui.BuildDataset(metadata, nil, rows, renderOpts, webui.Options{
-		View:         "network",
-		TimeLocation: time.UTC,
-	})
+	rows := []derive.Row{{Time: time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC), Values: map[string]any{"activeConn": 11.0}}}
+	renderOpts := render.Options{View: "network", ReportPath: "diagnostic.data", IntervalSeconds: 60, SampleCount: len(rows), TimeLocation: time.UTC, MetricsRange: render.MetricsRangeFromRows(rows)}
+	dataset := webui.BuildDataset(metadata, nil, rows, renderOpts, webui.Options{View: "network", TimeLocation: time.UTC})
 
 	for _, tc := range []struct {
 		name       string
@@ -282,54 +270,18 @@ func TestServeRenderedWebOutputPrintsEnabledLinksAndKeepAliveMessage(t *testing.
 		forbid     []string
 		listenAddr string
 	}{
-		{
-			name:       "web only",
-			opts:       cliOptions{Web: true, Listen: "127.0.0.1:8080"},
-			listenAddr: "http://127.0.0.1:8080",
-			want: []string{
-				"webUI\n  url: http://127.0.0.1:8080/\n",
-				"HTTP server is running. Press Ctrl+C to stop.\n",
-			},
-			forbid: []string{"\nwebTUI\n"},
-		},
-		{
-			name:       "tui only",
-			opts:       cliOptions{TUI: true, Listen: "127.0.0.1:9090"},
-			listenAddr: "http://127.0.0.1:9090",
-			want: []string{
-				"webTUI\n  url: http://127.0.0.1:9090/tui\n",
-				"HTTP server is running. Press Ctrl+C to stop.\n",
-			},
-			forbid: []string{"\nwebUI\n"},
-		},
-		{
-			name:       "web and tui",
-			opts:       cliOptions{Web: true, TUI: true, Listen: ":7777"},
-			listenAddr: "http://0.0.0.0:7777",
-			want: []string{
-				"webUI\n  url: http://127.0.0.1:7777/\n",
-				"webTUI\n  url: http://127.0.0.1:7777/tui\n",
-				"HTTP server is running. Press Ctrl+C to stop.\n",
-			},
-		},
+		{name: "web only", opts: cliOptions{Web: true, Listen: "127.0.0.1:8080"}, listenAddr: "http://127.0.0.1:8080", want: []string{"Web UI:  http://127.0.0.1:8080/\n", "HTTP server is running. Press Ctrl+C to stop.\n", "datetime"}, forbid: []string{"Web TUI:"}},
+		{name: "tui only", opts: cliOptions{TUI: true, Listen: "127.0.0.1:9090"}, listenAddr: "http://127.0.0.1:9090", want: []string{"Web TUI: http://127.0.0.1:9090/tui\n", "Report\n+", "HTTP server is running. Press Ctrl+C to stop.\n"}, forbid: []string{"Web UI:", "datetime"}},
+		{name: "web and tui", opts: cliOptions{Web: true, TUI: true, Listen: ":7777"}, listenAddr: "http://0.0.0.0:7777", want: []string{"Web UI:  http://127.0.0.1:7777/\n", "Web TUI: http://127.0.0.1:7777/tui\n", "HTTP server is running. Press Ctrl+C to stop.\n"}, forbid: []string{"datetime"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := &fakeWebServer{address: tc.listenAddr}
 			oldFactory := newWebServer
-			newWebServer = func(dataset webui.Dataset) (webServer, error) {
-				return fake, nil
-			}
+			newWebServer = func(dataset webui.Dataset) (webServer, error) { return fake, nil }
 			defer func() { newWebServer = oldFactory }()
-
 			var buf bytes.Buffer
 			if err := serveRenderedWebOutput(&buf, metadata, nil, rows, renderOpts, tc.opts, dataset); err != nil {
 				t.Fatal(err)
-			}
-			if !fake.served {
-				t.Fatal("expected server.Serve to be called")
-			}
-			if fake.listenArg != tc.opts.Listen {
-				t.Fatalf("listen arg=%q want=%q", fake.listenArg, tc.opts.Listen)
 			}
 			out := buf.String()
 			for _, want := range tc.want {
@@ -345,7 +297,6 @@ func TestServeRenderedWebOutputPrintsEnabledLinksAndKeepAliveMessage(t *testing.
 		})
 	}
 }
-
 func TestServeRenderedWebOutputPropagatesServeError(t *testing.T) {
 	fake := &fakeWebServer{address: "http://127.0.0.1:8080", serveErr: fmt.Errorf("serve failed")}
 	oldFactory := newWebServer

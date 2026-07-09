@@ -148,8 +148,9 @@ mongodb-ftdcstat diagnostic.data --web --from "2026-06-04T19:00:00" --to "2026-0
 
 ### `--tui`
 
-`--tui` starts a browser-based table UI with a fixed `datetime` column and still
-prints the normal terminal table.
+`--tui` starts a browser-based table UI with a fixed `datetime` column. The CLI
+still prints the report header, but it does not print the metrics table because
+those metrics are already available in the Web TUI.
 
 ```bash
 mongodb-ftdcstat diagnostic.data --tui
@@ -162,40 +163,35 @@ Behavior for `--web` and `--tui`:
 ```text
 starts one local HTTP server for either mode or both together
 binds to 127.0.0.1 on a random available port by default
-prints the normal vmstat-like report to stdout
-prints a `webUI` header section when --web is enabled
-prints a `webTUI` header section when --tui is enabled
+prints CLI header tables in normal CLI, --web, and --tui modes
+prints the CLI metrics table in normal CLI and --web modes
+suppresses the CLI metrics table whenever --tui is enabled
+prints `Web UI: ...` when --web is enabled
+prints `Web TUI: ...` when --tui is enabled
 prints `HTTP server is running. Press Ctrl+C to stop.` after the report
 reuses the existing FTDC parsing and derived-row pipeline
 keeps --view, --from, --to, --verbose, and --pressure semantics
 ```
 
-Example stdout with both enabled:
+Example stdout with `--web --tui`:
 
 ```text
-buildInfo
-  ...
+Web UI:  http://127.0.0.1:49231/
+Web TUI: http://127.0.0.1:49231/tui
 
-rsInfo
-  ...
+Report
++----------------+--------------------------+
+| Field          | Value                    |
++----------------+--------------------------+
+| Path           | diagnostic.data          |
+| View           | summary                  |
+| From           | 2026-06-04T19:00:00Z     |
+| To             | 2026-06-04T20:00:00Z     |
++----------------+--------------------------+
 
-hostInfo
-  ...
+...
 
-getCmdLineOpts
-  ...
-
-network
-  maxConn: 409
-
-webUI
-  url: http://127.0.0.1:49231/
-
-webTUI
-  url: http://127.0.0.1:49231/tui
-
-datetime                  | ...
-2026-06-04T19:00:00Z      | ...
+HTTP server is running. Press Ctrl+C to stop.
 ```
 
 For large captures, prefer combining `--web` or `--tui` with `--avg` or with
@@ -223,9 +219,9 @@ GET /api/data      -> selected derived rows or chart data
 GET /api/table     -> flattened table rows for the Web TUI
 ```
 
-`/api/metadata` includes `headerText`, a terminal-style preformatted header
-that mirrors the CLI report header as closely as possible. The dashboard renders
-it in a monospace `<pre>` block instead of dashboard cards.
+`/api/metadata` still includes `headerText` for compatibility, but neither the
+Web UI nor the Web TUI renders that CLI-style header block in the browser.
+Header metadata is now terminal-only.
 
 The dashboard charts are grouped by the same logical sections as the selected
 view. For server metrics, the web UI splits charts into `server / Commands` and

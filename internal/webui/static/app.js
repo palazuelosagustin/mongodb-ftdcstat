@@ -79,7 +79,6 @@ function renderPage() {
   addPill(topMeta, `${state.metadata.rowCount} rows`);
   if (state.metadata.timeRange.from) addPill(topMeta, `from=${state.metadata.timeRange.from}`);
   if (state.metadata.timeRange.to) addPill(topMeta, `to=${state.metadata.timeRange.to}`);
-  document.getElementById("metadata").textContent = state.metadata.headerText || "";
   renderZoomStatus();
   renderWarnings();
   renderMetricGroups();

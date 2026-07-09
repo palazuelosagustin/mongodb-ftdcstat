@@ -45,7 +45,7 @@ body {
   padding-left: 2px;
 }
 h1, h2, h3 { margin: 0; }
-.subtitle, .meta-pill, .hint, .warning, .empty, .chart-stats, .tooltip, .metadata-panel, .search, button {
+.subtitle, .meta-pill, .hint, .warning, .empty, .chart-stats, .tooltip, .search, button {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 .subtitle {
@@ -89,20 +89,6 @@ h1, h2, h3 { margin: 0; }
 .content {
   display: grid;
   gap: 18px;
-}
-.metadata-wrap {
-  overflow: hidden;
-}
-.metadata-panel {
-  margin: 0;
-  padding: 18px;
-  white-space: pre-wrap;
-  overflow: auto;
-  line-height: 1.45;
-  font-size: 0.87rem;
-  background:
-    linear-gradient(180deg, rgba(35, 43, 54, 0.98), rgba(26, 31, 39, 0.98));
-  color: #f3e7c7;
 }
 .search {
   width: 100%;

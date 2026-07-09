@@ -20,14 +20,17 @@ type WebLinks struct {
 }
 
 type Options struct {
-	View         string
-	JSON         bool
-	WebLinks     WebLinks
-	AvgBucket    time.Duration
-	MetricsRange MetricsRange
-	Verbose      bool
-	Pressure     bool
-	TimeLocation *time.Location
+	View            string
+	JSON            bool
+	WebLinks        WebLinks
+	AvgBucket       time.Duration
+	MetricsRange    MetricsRange
+	ReportPath      string
+	SampleCount     int
+	IntervalSeconds int
+	Verbose         bool
+	Pressure        bool
+	TimeLocation    *time.Location
 }
 
 type MetricsRange struct {
@@ -66,7 +69,10 @@ func Render(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows
 	if NeedsBufferedRows(opts) {
 		return RenderJSON(w, metadata, warnings, rows, opts)
 	}
-	return renderTableRows(w, metadata, rows, opts)
+	if opts.SampleCount == 0 {
+		opts.SampleCount = len(rows)
+	}
+	return RenderCLITable(w, metadata, rows, opts)
 }
 
 func RenderJSON(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows []derive.Row, opts Options) error {
@@ -85,7 +91,15 @@ func RenderJSON(w io.Writer, metadata model.Metadata, warnings []model.Warning, 
 	return enc.Encode(payload)
 }
 
-func renderTableRows(w io.Writer, metadata model.Metadata, rows []derive.Row, opts Options) error {
+func RenderCLITable(w io.Writer, metadata model.Metadata, rows []derive.Row, opts Options) error {
+	if err := RenderCLIHeader(w, metadata, opts); err != nil {
+		return err
+	}
+	RenderCLIAverageNotice(w, opts.AvgBucket)
+	return RenderCLIMetrics(w, metadata, rows, opts)
+}
+
+func RenderCLIMetrics(w io.Writer, metadata model.Metadata, rows []derive.Row, opts Options) error {
 	rsInfo := derive.ReplSetInfoFromMetadata(metadata)
 	nodeLabels := replicationNodeLabels(rsInfo, rows)
 	layout := layoutForView(opts.View, nodeLabels, opts.Verbose, opts.Pressure, metadata.ProcessKind())
@@ -93,8 +107,6 @@ func renderTableRows(w io.Writer, metadata model.Metadata, rows []derive.Row, op
 	if loc == nil {
 		loc = time.UTC
 	}
-	renderHeader(w, metadata, rsInfo, loc, opts.WebLinks, opts.MetricsRange)
-	renderAverageNotice(w, opts.AvgBucket)
 	renderer := newStreamingRenderer(w, layout.Columns, layout.Sections, loc)
 	for _, row := range rows {
 		if err := renderer.RenderRow(row); err != nil {
@@ -238,54 +250,6 @@ func nodeLabelNumber(label string) (int, bool) {
 	return n, true
 }
 
-func renderHeader(w io.Writer, metadata model.Metadata, rsInfo derive.ReplSetInfo, loc *time.Location, webLinks WebLinks, metricsRange MetricsRange) {
-	build, _ := metadata.LatestDoc("buildInfo")
-	host, _ := metadata.LatestDoc("hostInfo")
-	cmd, _ := metadata.LatestDoc("getCmdLineOpts")
-	params, _ := metadata.LatestDoc("getParameter")
-	status, _ := metadata.LatestDoc("serverStatus")
-
-	fmt.Fprintln(w, "buildInfo")
-	buildFields := []string{
-		"version=" + lookupString(build, "version"),
-		"git=" + lookupString(build, "gitVersion"),
-		"modules=" + lookupList(build, "modules"),
-		"storage=" + firstString(metadata.StorageEngineName(), lookupString(status, "storageEngine.name"), lookupString(cmd, "parsed.storage.engine")),
-		"allocator=" + lookupString(build, "allocator"),
-		"openssl=" + lookupString(build, "openssl.running"),
-	}
-	fmt.Fprintf(w, "  %s\n", strings.Join(buildFields, " "))
-	if perconaFeatures := lookupUniqueList(build, "perconaFeatures"); perconaFeatures != "-" {
-		fmt.Fprintf(w, "  perconaFeatures=%s\n", perconaFeatures)
-	}
-	renderRSInfo(w, rsInfo)
-	renderHostInfo(w, host)
-	renderCmdLineOpts(w, cmd)
-	fmt.Fprintln(w, "Parameters")
-	fmt.Fprintf(w, "  wtCache=%s",
-		firstString(lookupString(params, "wiredTigerEngineRuntimeConfig.cache_size"), lookupString(cmd, "parsed.storage.wiredTiger.engineConfig.cacheSizeGB")),
-	)
-	for _, item := range explicitParameters(cmd) {
-		fmt.Fprintf(w, " %s", item)
-	}
-	fmt.Fprintln(w)
-	renderMetricsRangeHeader(w, metricsRange)
-	renderNetworkHeader(w, metadata)
-	renderWebLinksHeader(w, webLinks)
-	fmt.Fprintln(w)
-}
-
-func renderNetworkHeader(w io.Writer, metadata model.Metadata) {
-	fmt.Fprintln(w, "network")
-	fmt.Fprintf(w, "  maxConn: %s\n", metadata.NetworkMaxConnDisplay())
-}
-
-func renderMetricsRangeHeader(w io.Writer, metricsRange MetricsRange) {
-	fmt.Fprintln(w, "metricsRange")
-	fmt.Fprintf(w, "  start: %s\n", formatMetricsRangeTime(metricsRange.Start))
-	fmt.Fprintf(w, "  end:   %s\n", formatMetricsRangeTime(metricsRange.End))
-}
-
 func formatMetricsRangeTime(ts time.Time) string {
 	if ts.IsZero() {
 		return "-"
@@ -293,20 +257,7 @@ func formatMetricsRangeTime(ts time.Time) string {
 	return ts.UTC().Format(time.RFC3339)
 }
 
-func renderWebLinksHeader(w io.Writer, webLinks WebLinks) {
-	if webLinks.WebURL == "" && webLinks.TUIURL == "" {
-		return
-	}
-	if webLinks.WebURL != "" {
-		fmt.Fprintln(w, "webUI")
-		fmt.Fprintf(w, "  url: %s\n", webLinks.WebURL)
-	}
-	if webLinks.TUIURL != "" {
-		fmt.Fprintln(w, "webTUI")
-		fmt.Fprintf(w, "  url: %s\n", webLinks.TUIURL)
-	}
-}
-func renderAverageNotice(w io.Writer, bucket time.Duration) {
+func RenderCLIAverageNotice(w io.Writer, bucket time.Duration) {
 	if bucket <= 0 {
 		return
 	}
@@ -613,8 +564,6 @@ func NewStreamingRenderer(w io.Writer, metadata model.Metadata, opts Options) (*
 	if loc == nil {
 		loc = time.UTC
 	}
-	renderHeader(w, metadata, rsInfo, loc, opts.WebLinks, opts.MetricsRange)
-	renderAverageNotice(w, opts.AvgBucket)
 	return newStreamingRenderer(w, layout.Columns, layout.Sections, loc), nil
 }
 

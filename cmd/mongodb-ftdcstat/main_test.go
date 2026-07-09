@@ -276,19 +276,28 @@ func TestParseArgsListenRequiresWebOrTUI(t *testing.T) {
 	}
 }
 
-func TestServeHTTPEnabled(t *testing.T) {
+func TestRenderDecisionHelpers(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		opts cliOptions
-		want bool
+		name    string
+		opts    cliOptions
+		header  bool
+		metrics bool
+		http    bool
 	}{
-		{name: "cli only", opts: cliOptions{}, want: false},
-		{name: "web only", opts: cliOptions{Web: true}, want: true},
-		{name: "tui only", opts: cliOptions{TUI: true}, want: true},
-		{name: "web and tui", opts: cliOptions{Web: true, TUI: true}, want: true},
+		{name: "default", opts: cliOptions{}, header: true, metrics: true, http: false},
+		{name: "web", opts: cliOptions{Web: true}, header: true, metrics: true, http: true},
+		{name: "tui", opts: cliOptions{TUI: true}, header: true, metrics: false, http: true},
+		{name: "web+tui", opts: cliOptions{Web: true, TUI: true}, header: true, metrics: false, http: true},
+		{name: "json", opts: cliOptions{JSON: true}, header: false, metrics: false, http: false},
 	} {
-		if got := serveHTTPEnabled(tc.opts); got != tc.want {
-			t.Fatalf("%s: got %v want %v", tc.name, got, tc.want)
+		if got := shouldPrintCLIHeader(tc.opts); got != tc.header {
+			t.Fatalf("%s header: got %v want %v", tc.name, got, tc.header)
+		}
+		if got := shouldPrintCLIMetrics(tc.opts); got != tc.metrics {
+			t.Fatalf("%s metrics: got %v want %v", tc.name, got, tc.metrics)
+		}
+		if got := shouldStartHTTPServer(tc.opts); got != tc.http {
+			t.Fatalf("%s http: got %v want %v", tc.name, got, tc.http)
 		}
 	}
 }

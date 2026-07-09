@@ -112,11 +112,13 @@ func main() {
 
 	timeLocation := time.UTC
 	renderOpts := render.Options{
-		View:         opts.View,
-		JSON:         opts.JSON,
-		Verbose:      opts.Verbose,
-		Pressure:     opts.Pressure,
-		TimeLocation: timeLocation,
+		View:            opts.View,
+		JSON:            opts.JSON,
+		ReportPath:      opts.Path,
+		IntervalSeconds: opts.Interval,
+		Verbose:         opts.Verbose,
+		Pressure:        opts.Pressure,
+		TimeLocation:    timeLocation,
 	}
 	input := captureInput{
 		reader:     reader,
@@ -133,7 +135,7 @@ func main() {
 		},
 	}
 
-	if serveHTTPEnabled(opts) {
+	if shouldStartHTTPServer(opts) {
 		if err := runWebOutput(os.Stdout, input, warnings, renderOpts, opts); err != nil {
 			printError(os.Stderr, err)
 			os.Exit(1)
@@ -153,7 +155,15 @@ func main() {
 	}
 }
 
-func serveHTTPEnabled(opts cliOptions) bool {
+func shouldPrintCLIHeader(opts cliOptions) bool {
+	return !opts.JSON
+}
+
+func shouldPrintCLIMetrics(opts cliOptions) bool {
+	return !opts.JSON && !opts.TUI
+}
+
+func shouldStartHTTPServer(opts cliOptions) bool {
 	return opts.Web || opts.TUI
 }
 
@@ -164,6 +174,10 @@ func runStreamingTableOutput(w io.Writer, input captureInput, warnings []model.W
 	}
 	renderOpts.MetricsRange = metricsRange
 	renderOpts.AvgBucket = input.avgBucket
+	if err := render.RenderCLIHeader(w, input.metadata, renderOpts); err != nil {
+		return err
+	}
+	render.RenderCLIAverageNotice(w, renderOpts.AvgBucket)
 	renderer, err := render.NewStreamingRenderer(w, input.metadata, renderOpts)
 	if err != nil {
 		return err
@@ -201,6 +215,7 @@ func runBufferedOutput(w io.Writer, input captureInput, warnings []model.Warning
 	}
 	renderOpts.MetricsRange = metricsRange
 	renderOpts.AvgBucket = input.avgBucket
+	renderOpts.SampleCount = len(rows)
 	return render.RenderJSON(w, input.metadata, warnings, rows, renderOpts)
 }
 
@@ -212,6 +227,7 @@ func runWebOutput(w io.Writer, input captureInput, warnings []model.Warning, ren
 	}
 	renderOpts.MetricsRange = metricsRange
 	renderOpts.AvgBucket = input.avgBucket
+	renderOpts.SampleCount = len(rows)
 	dataset := webui.BuildDataset(input.metadata, append(append([]model.Warning(nil), warnings...), streamWarnings...), rows, renderOpts, webui.Options{
 		View:         opts.View,
 		Avg:          opts.Avg,
@@ -241,9 +257,18 @@ func serveRenderedWebOutput(w io.Writer, metadata model.Metadata, warnings []mod
 	if opts.TUI {
 		renderOpts.WebLinks.TUIURL = links.TUIURL
 	}
-	if err := render.Render(w, metadata, warnings, rows, renderOpts); err != nil {
-		_ = server.Close()
-		return err
+	if shouldPrintCLIHeader(opts) {
+		if err := render.RenderCLIHeader(w, metadata, renderOpts); err != nil {
+			_ = server.Close()
+			return err
+		}
+	}
+	if shouldPrintCLIMetrics(opts) {
+		render.RenderCLIAverageNotice(w, renderOpts.AvgBucket)
+		if err := render.RenderCLIMetrics(w, metadata, rows, renderOpts); err != nil {
+			_ = server.Close()
+			return err
+		}
 	}
 	fmt.Fprintln(w, "HTTP server is running. Press Ctrl+C to stop.")
 	return server.Serve()

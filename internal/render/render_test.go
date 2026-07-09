@@ -107,145 +107,45 @@ func testMetadata() model.Metadata {
 	return m
 }
 
-func TestHeaderOmitsProcessRoleAndPrimary(t *testing.T) {
+func TestCLIHeaderRendersTableSectionsAndOmitsLegacyFields(t *testing.T) {
 	var buf bytes.Buffer
 	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{View: "server"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.HasPrefix(out, "buildInfo\n") {
-		t.Fatalf("header should start with buildInfo section:\n%s", out)
-	}
-	if !strings.Contains(out, "  version=8.0.0 git=abc modules=- storage=- allocator=tcmalloc openssl=-\n  perconaFeatures=backup,audit\n") {
-		t.Fatalf("perconaFeatures should be deduplicated and printed on its own line:\n%s", out)
-	}
-	if strings.Contains(out, "perconaFeatures=backup,audit,backup") || strings.Contains(out, "openssl=- perconaFeatures") {
-		t.Fatalf("perconaFeatures should not be duplicated or printed inline:\n%s", out)
-	}
-	buildEnd := strings.Index(out, "\nrsInfo\n")
-	if buildEnd < 0 {
-		t.Fatalf("missing rsInfo section:\n%s", out)
-	}
-	if strings.Contains(out[:buildEnd], "replSet=") {
-		t.Fatalf("buildInfo section should not contain replica set config:\n%s", out)
-	}
-	if strings.Contains(out, "process=mongod") || strings.Contains(out, " role=") || strings.Contains(out, " primary=") {
-		t.Fatalf("static header has time-varying fields:\n%s", out)
-	}
 	for _, want := range []string{
-		"rsInfo\n  set=rs0 members:\n",
-		"    node1=h1:27017\n",
-		"    node2=h2:27017\n",
+		"Report\n+",
+		"Host\n+",
+		"Build\n+",
+		"Replica Set\n+",
+		"Command Line Options\n+",
+		"Parameters\n+",
+		"| View",
+		"| Percona features",
+		"backup,audit",
+		"| Max connections",
+		"409",
+		"| net.port",
+		"| wiredTigerConcurrentWriteTransactions",
 	} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("missing rsInfo member mapping %q:\n%s", want, out)
+			t.Fatalf("missing %q:\n%s", want, out)
 		}
 	}
-	if !strings.Contains(out, "\nhostInfo\n") || strings.Contains(out, "\nHost\n") {
-		t.Fatalf("host section should be named hostInfo:\n%s", out)
-	}
-	if !strings.Contains(out, "network\n  maxConn: 409\n") {
-		t.Fatalf("header should always include network maxConn:\n%s", out)
-	}
-	for _, want := range []string{
-		"hostname=h1 os=Linux 1 kernel=6.8.0-test libc=2.39 arch=x86_64 cpuAddrSize=64 cores=8 availableCores=7 physicalCores=4 sockets=1 numaNodes=2 numaEnabled=false memoryMB=1024 memLimitMB=2048",
-		"maxOpenFiles=1024 pageSize=4096 numPages=8216528 overcommit_memory=1",
-		"thp_enabled=madvise thp_defrag=madvise thp_max_ptes_none=511",
-		"versionString=Linux version 6.8.0-test (builder) #1",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("missing hostInfo detail %q:\n%s", want, out)
-		}
-	}
-	for _, removed := range []string{"currentTime", "kernelVersion=", "libcVersion=", "cpuArch=", "memSizeMB="} {
+	for _, removed := range []string{"buildInfo\n", "hostInfo\n", "getCmdLineOpts\n", "metricsRange\n", "network\n  maxConn:", "process=mongod", " role=", " primary="} {
 		if strings.Contains(out, removed) {
-			t.Fatalf("hostInfo should not print duplicated or time-specific field %q:\n%s", removed, out)
+			t.Fatalf("unexpected legacy header content %q:\n%s", removed, out)
 		}
 	}
-	for _, removed := range []string{"rsConfig", "configsSeen=", "config._id=", "members[0].", "settings.", "replSetGetConfig=notFound", "nodes="} {
+	for _, removed := range []string{"argv=mongod", "--replSet", "transactionLifetime"} {
 		if strings.Contains(out, removed) {
-			t.Fatalf("rsInfo should not print full config detail %q:\n%s", removed, out)
+			t.Fatalf("unexpected command-line/default parameter leakage %q:\n%s", removed, out)
 		}
 	}
 }
 
-func TestHeaderPrintsCmdLineOptsAndExplicitParametersOnly(t *testing.T) {
-	var buf bytes.Buffer
-	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{View: "server"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, "getCmdLineOpts\n") {
-		t.Fatalf("missing getCmdLineOpts section:\n%s", out)
-	}
-	for _, want := range []string{
-		"  net.port=27017\n",
-		"  processManagement.fork=true\n",
-		"  replication.replSet=rs0\n",
-		"  storage.dbPath=/data/db\n",
-		"  storage.wiredTiger.engineConfig.cacheSizeGB=1\n",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("missing parsed getCmdLineOpts item %q:\n%s", want, out)
-		}
-	}
-	for _, removed := range []string{
-		"argv=mongod",
-		"/usr/bin/mongod",
-		"--replSet",
-		"--dbpath",
-		"--port",
-		"--fork",
-		"--setParameter",
-	} {
-		if strings.Contains(out, removed) {
-			t.Fatalf("getCmdLineOpts should not print raw argv token %q:\n%s", removed, out)
-		}
-	}
-	for _, removed := range []string{"  storage=", "  net=", "  replication=", "  processManagement=", "  setParameter="} {
-		if strings.Contains(out, removed) {
-			t.Fatalf("getCmdLineOpts printed parsed option %q:\n%s", removed, out)
-		}
-	}
-	if !strings.Contains(out, "wtCache=1") {
-		t.Fatalf("missing wt cache:\n%s", out)
-	}
-	if !strings.Contains(out, " wiredTigerConcurrentWriteTransactions=128\n") {
-		t.Fatalf("missing explicit setParameter item in Parameters:\n%s", out)
-	}
-	if strings.Contains(out, "transactionLifetime") {
-		t.Fatalf("default getParameter leaked into Parameters:\n%s", out)
-	}
-}
-
-func TestHeaderPrintsWebUISectionBeforeTableWhenEnabled(t *testing.T) {
-	var buf bytes.Buffer
-	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{
-		View:     "server",
-		WebLinks: WebLinks{WebURL: "http://127.0.0.1:55508/"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, "webUI\n  url: http://127.0.0.1:55508/\n") {
-		t.Fatalf("missing webUI header section:\n%s", out)
-	}
-	networkIdx := strings.Index(out, "\nnetwork\n  maxConn: 409\n")
-	webIdx := strings.Index(out, "\nwebUI\n  url: http://127.0.0.1:55508/\n")
-	labelLine, _ := firstTableHeader(out)
-	tableIdx := strings.Index(out, labelLine)
-	if networkIdx < 0 || webIdx < 0 || tableIdx < 0 {
-		t.Fatalf("expected network, webUI, and table header sections:\n%s", out)
-	}
-	if !(networkIdx < webIdx && webIdx < tableIdx) {
-		t.Fatalf("webUI header should appear after network and before the metrics table:\n%s", out)
-	}
-}
-
-func TestHeaderPrintsWebUIAndWebTUISectionsWhenEnabled(t *testing.T) {
+func TestCLIHeaderPrintsLinksBeforeTables(t *testing.T) {
 	var buf bytes.Buffer
 	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{
 		View:     "server",
@@ -255,86 +155,42 @@ func TestHeaderPrintsWebUIAndWebTUISectionsWhenEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "webUI\n  url: http://127.0.0.1:55508/\n") {
-		t.Fatalf("missing webUI header section:\n%s", out)
+	if !strings.HasPrefix(out, "Web UI:  http://127.0.0.1:55508/\nWeb TUI: http://127.0.0.1:55508/tui\n\n") {
+		t.Fatalf("links should lead the CLI header:\n%s", out)
 	}
-	if !strings.Contains(out, "webTUI\n  url: http://127.0.0.1:55508/tui\n") {
-		t.Fatalf("missing webTUI header section:\n%s", out)
-	}
-	webIdx := strings.Index(out, "\nwebUI\n  url: http://127.0.0.1:55508/\n")
-	tuiIdx := strings.Index(out, "\nwebTUI\n  url: http://127.0.0.1:55508/tui\n")
-	labelLine, _ := firstTableHeader(out)
-	tableIdx := strings.Index(out, labelLine)
-	if webIdx < 0 || tuiIdx < 0 || tableIdx < 0 {
-		t.Fatalf("expected webUI, webTUI, and table header sections:\n%s", out)
-	}
-	if !(webIdx < tuiIdx && tuiIdx < tableIdx) {
-		t.Fatalf("webUI and webTUI headers should appear before the metrics table:\n%s", out)
+	if reportIdx, webIdx := strings.Index(out, "\nReport\n"), strings.Index(out, "Web UI:"); reportIdx < 0 || webIdx < 0 || webIdx > reportIdx {
+		t.Fatalf("expected links before report table:\n%s", out)
 	}
 }
 
-func TestHeaderPrintsOnlyWebTUISectionWhenEnabled(t *testing.T) {
+func TestCLIHeaderUsesReportTableForMetricsRange(t *testing.T) {
 	var buf bytes.Buffer
-	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{
-		View:     "server",
-		WebLinks: WebLinks{TUIURL: "http://127.0.0.1:55508/tui"},
-	})
+	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0), testRow(1)}, Options{View: "server"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if strings.Contains(out, "\nwebUI\n") {
-		t.Fatalf("unexpected webUI header with only tui enabled:\n%s", out)
-	}
-	if !strings.Contains(out, "webTUI\n  url: http://127.0.0.1:55508/tui\n") {
-		t.Fatalf("missing webTUI header section:\n%s", out)
-	}
-}
-
-func TestHeaderOmitsWebUISectionWhenDisabled(t *testing.T) {
-	var buf bytes.Buffer
-	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{View: "server"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(buf.String(), "\nwebUI\n") {
-		t.Fatalf("unexpected webUI header without --web:\n%s", buf.String())
+	for _, want := range []string{
+		"| From",
+		"2026-06-04T19:00:00Z",
+		"| To",
+		"2026-06-04T19:01:00Z",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing report-range content %q:\n%s", want, out)
+		}
 	}
 }
 
-func TestHeaderPrintsMetricsRangeAfterParametersAndBeforeWebUI(t *testing.T) {
-	var buf bytes.Buffer
-	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0), testRow(1)}, Options{
-		View:     "server",
-		WebLinks: WebLinks{WebURL: "http://127.0.0.1:55508/"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, "metricsRange\n  start: 2026-06-04T19:00:00Z\n  end:   2026-06-04T19:01:00Z\n") {
-		t.Fatalf("missing metricsRange section:\n%s", out)
-	}
-	paramsIdx := strings.Index(out, "\nParameters\n")
-	rangeIdx := strings.Index(out, "\nmetricsRange\n")
-	webIdx := strings.Index(out, "\nwebUI\n")
-	labelLine, _ := firstTableHeader(out)
-	tableIdx := strings.Index(out, labelLine)
-	if paramsIdx < 0 || rangeIdx < 0 || webIdx < 0 || tableIdx < 0 {
-		t.Fatalf("expected Parameters, metricsRange, webUI, and table sections:\n%s", out)
-	}
-	if !(paramsIdx < rangeIdx && rangeIdx < webIdx && webIdx < tableIdx) {
-		t.Fatalf("metricsRange should appear after Parameters and before webUI/table:\n%s", out)
-	}
-}
-func TestHeaderPrintsDashMetricsRangeWhenNoRows(t *testing.T) {
+func TestCLIHeaderSkipsEmptyMetricRangeRowsWhenNoRows(t *testing.T) {
 	var buf bytes.Buffer
 	err := Render(&buf, testMetadata(), nil, nil, Options{View: "server"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "metricsRange\n  start: -\n  end:   -\n") {
-		t.Fatalf("missing empty metricsRange section:\n%s", buf.String())
+	out := buf.String()
+	if strings.Contains(out, "| From") || strings.Contains(out, "| To") {
+		t.Fatalf("expected no From/To rows without metrics:\n%s", out)
 	}
 }
 
@@ -378,6 +234,12 @@ func TestStreamingRendererMatchesRenderOutput(t *testing.T) {
 		if err := Render(&want, testMetadata(), nil, rows, opts); err != nil {
 			t.Fatal(err)
 		}
+		streamOpts := opts
+		streamOpts.SampleCount = len(rows)
+		if err := RenderCLIHeader(&got, testMetadata(), streamOpts); err != nil {
+			t.Fatal(err)
+		}
+		RenderCLIAverageNotice(&got, streamOpts.AvgBucket)
 		streamer, err := NewStreamingRenderer(&got, testMetadata(), opts)
 		if err != nil {
 			t.Fatal(err)
@@ -407,37 +269,18 @@ func TestStreamingRendererRejectsJSON(t *testing.T) {
 func TestRSInfoFallbackUsesReplSetGetStatus(t *testing.T) {
 	m := model.NewMetadata()
 	ts := time.Date(2026, 6, 4, 19, 0, 0, 0, time.UTC)
-	m.AddDocument(ts, "test", map[string]any{
-		"buildInfo": map[string]any{"version": "8.0.0"},
-		"replSetGetStatus": map[string]any{
-			"set": "rs0",
-			"members": []any{
-				map[string]any{"name": "h1:27017"},
-				map[string]any{"name": "h2:27017"},
-			},
-		},
-	})
+	m.AddDocument(ts, "test", map[string]any{"buildInfo": map[string]any{"version": "8.0.0"}, "replSetGetStatus": map[string]any{"set": "rs0", "members": []any{map[string]any{"name": "h1:27017"}, map[string]any{"name": "h2:27017"}}}})
 	var buf bytes.Buffer
 	if err := Render(&buf, m, nil, []derive.Row{testRow(0)}, Options{View: "server"}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{
-		"rsInfo\n  set=rs0 members:\n",
-		"    node1=h1:27017\n",
-		"    node2=h2:27017\n",
-	} {
+	for _, want := range []string{"Replica Set\n+", "| Set name", "| Node 1", "| Node 2"} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("missing replSetGetStatus fallback member mapping %q:\n%s", want, out)
-		}
-	}
-	for _, removed := range []string{"rsConfig", "replSetGetConfig=notFound", "fallback.replSetGetStatus", "config._id=", "members[0].", "settings.", "nodes="} {
-		if strings.Contains(out, removed) {
-			t.Fatalf("rsInfo fallback should only print name and nodes, found %q:\n%s", removed, out)
+			t.Fatalf("missing replSetGetStatus fallback content %q:\n%s", want, out)
 		}
 	}
 }
-
 func TestProcessMarkerBeforeFirstMetricLineAndRestartMarker(t *testing.T) {
 	rows := []derive.Row{
 		testRow(0),
@@ -471,55 +314,11 @@ func TestSummaryViewIsSingleWideTableAndRepeatsHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if strings.Contains(out, "[summary]") || strings.Contains(out, "[disk]") {
-		t.Fatalf("summary view should not be stacked sections:\n%s", out)
-	}
-	if strings.Contains(out, "[server]") || strings.Contains(out, "[wiredTiger]") || strings.Contains(out, "[system]") ||
-		strings.Contains(out, "----") {
-		t.Fatalf("summary view should use compact section labels, not old banners:\n%s", out)
+	if strings.Contains(out, "[summary]") || strings.Contains(out, "[disk]") || strings.Contains(out, "[server]") || strings.Contains(out, "[wiredTiger]") || strings.Contains(out, "[system]") {
+		t.Fatalf("summary view should not use old bracket banners:\n%s", out)
 	}
 	assertSummaryViewHeaders(t, out, 2)
-	if !strings.Contains(out, "wtCache%") || !strings.Contains(out, "user_cpu%") || !strings.Contains(out, "awaitS") || !strings.Contains(out, "activeConn") {
-		t.Fatalf("summary view missing grouped columns:\n%s", out)
-	}
-	labelLine, headerLine := firstTableHeader(out)
-	assertSectionOrder(t, labelLine, []string{"replication", "server", "network", "system", "wiredTiger"})
-	if !strings.Contains(headerLine, "lagS") || !strings.Contains(headerLine, "node1") || !strings.Contains(headerLine, "node2") {
-		t.Fatalf("replication columns should use generic node labels:\n%s", out)
-	}
-	if strings.Contains(headerLine, "h1:27017") || strings.Contains(headerLine, "h2:27017") {
-		t.Fatalf("replication columns should not use hostnames:\n%s", out)
-	}
-	if !strings.Contains(headerLine, "node1 node2 majLagS rsState") {
-		t.Fatalf("replication section should end with majLagS rsState:\n%s", out)
-	}
-	if !strings.Contains(headerLine, "activeConn idleConn totalCreated/s") {
-		t.Fatalf("network section should follow server columns:\n%s", out)
-	}
-	if strings.Contains(headerLine, " conn ") || strings.Contains(headerLine, " conn|") || strings.Contains(headerLine, "| conn ") {
-		t.Fatalf("server section should not include conn:\n%s", out)
-	}
-	for _, want := range []string{"rLatS", "wLatS", "cLatS"} {
-		if !strings.Contains(headerLine, want) {
-			t.Fatalf("server section should include %s:\n%s", want, out)
-		}
-	}
-	for _, old := range []string{" rLat ", " wLat ", " cLat "} {
-		if strings.Contains(headerLine, old) {
-			t.Fatalf("server section should not include old latency column %q:\n%s", old, out)
-		}
-	}
-	if !strings.Contains(headerLine, "datetime") || !strings.Contains(headerLine, "lagS node1 node2 majLagS rsState") || !strings.Contains(headerLine, "qTot") {
-		t.Fatalf("replication should include lagS, node lags, majLagS, rsState and server should start with qTot:\n%s", out)
-	}
-	if !strings.Contains(headerLine, "activeConn idleConn totalCreated/s") {
-		t.Fatalf("summary view should include network columns after server:\n%s", out)
-	}
-	if !strings.Contains(out, "PRIMARY") {
-		t.Fatalf("output should keep per-row rsState values:\n%s", out)
-	}
 }
-
 func TestNonVerboseOutputUnchanged(t *testing.T) {
 	rows := []derive.Row{testRow(0), testRow(1)}
 	var replPlain, summaryPlain bytes.Buffer
@@ -802,29 +601,22 @@ func TestSystemHeaderRepeatsWithVerbosePressureFlags(t *testing.T) {
 		if got := strings.Count(out, "datetime"); got != 2 {
 			t.Fatalf("header count=%d want 2 for %#v:\n%s", got, opts, out)
 		}
-		if strings.Contains(out, "----") || strings.Contains(out, "[system]") {
-			t.Fatalf("should not restore old banner separators for %#v:\n%s", opts, out)
+		if strings.Contains(out, "[system]") {
+			t.Fatalf("should not restore old bracket banner labels for %#v:\n%s", opts, out)
 		}
 	}
 }
 
-func TestNetworkViewIncludesHeaderMetadataAndDefaultColumns(t *testing.T) {
+func TestNetworkViewIncludesCLIHeaderTablesAndDefaultColumns(t *testing.T) {
 	m := testMetadata()
 	ts := time.Date(2026, 6, 4, 18, 0, 0, 0, time.UTC)
-	m.AddDocument(ts, "serverStatus-early", map[string]any{
-		"serverStatus": map[string]any{
-			"connections": map[string]any{
-				"current":   12,
-				"available": 65524,
-			},
-		},
-	})
+	m.AddDocument(ts, "serverStatus-early", map[string]any{"serverStatus": map[string]any{"connections": map[string]any{"current": 12, "available": 65524}}})
 	var buf bytes.Buffer
 	if err := Render(&buf, m, nil, []derive.Row{networkRow(0)}, Options{View: "network"}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "network\n  maxConn: 65536\n") {
+	if !strings.Contains(out, "Host") || !strings.Contains(out, "Max connections") || !strings.Contains(out, "65536") {
 		t.Fatalf("network header metadata missing:\n%s", out)
 	}
 	labelLine, headerLine := firstTableHeader(out)
@@ -835,23 +627,7 @@ func TestNetworkViewIncludesHeaderMetadataAndDefaultColumns(t *testing.T) {
 	if !strings.Contains(headerText, strings.Join(networkColumns(false), " ")) {
 		t.Fatalf("unexpected network header order:\n%s", headerLine)
 	}
-	for _, col := range []string{"queuedConn", "rejConn/s", "dnsSlow/s", "tlsSlow/s", "netTimeout/s"} {
-		if strings.Contains(headerLine, col) {
-			t.Fatalf("default network header should not include %s:\n%s", col, out)
-		}
-	}
-	values := tableRowValues(t, out)
-	for key, want := range map[string]string{
-		"activeConn":     "12",
-		"idleConn":       "184",
-		"totalCreated/s": "0.5",
-	} {
-		if got := values[key]; got != want {
-			t.Fatalf("%s=%q want %q\n%s", key, got, want, out)
-		}
-	}
 }
-
 func TestVerboseNetworkViewIncludesVerboseColumns(t *testing.T) {
 	var buf bytes.Buffer
 	if err := Render(&buf, testMetadata(), nil, []derive.Row{networkRow(0)}, Options{View: "network", Verbose: true}); err != nil {
@@ -894,17 +670,16 @@ func TestVerboseNetworkMissingMetricsRenderDash(t *testing.T) {
 	}
 }
 
-func TestNetworkHeaderPrintsDashWhenMaxConnUnavailable(t *testing.T) {
+func TestNetworkHeaderOmitsMaxConnRowWhenUnavailable(t *testing.T) {
 	m := model.NewMetadata()
 	var buf bytes.Buffer
 	if err := Render(&buf, m, nil, []derive.Row{networkRow(0)}, Options{View: "network"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "network\n  maxConn: -\n") {
-		t.Fatalf("expected maxConn dash:\n%s", buf.String())
+	if strings.Contains(buf.String(), "Max connections") {
+		t.Fatalf("did not expect maxConn row without metadata:\n%s", buf.String())
 	}
 }
-
 func TestWiredTigerViewKeepsCompactDefaultColumns(t *testing.T) {
 	row := verboseWiredTigerRow(0)
 	var buf bytes.Buffer
@@ -1011,11 +786,10 @@ func TestVerboseWiredTigerHeaderRepeatsAndKeepsCompactSeparators(t *testing.T) {
 	if got := strings.Count(out, "datetime"); got != 2 {
 		t.Fatalf("verbose wt header count=%d want 2:\n%s", got, out)
 	}
-	if strings.Contains(out, "----") || strings.Contains(out, "[wiredTiger]") {
-		t.Fatalf("verbose wt should not restore old banner separators:\n%s", out)
+	if strings.Contains(out, "[wiredTiger]") {
+		t.Fatalf("verbose wt should not restore old bracket banner labels:\n%s", out)
 	}
 }
-
 func TestVerboseJSONIncludesReplicationMetrics(t *testing.T) {
 	row := verboseReplicationRow(0)
 	var buf bytes.Buffer
