@@ -17,18 +17,12 @@ function renderTable(tableData) {
   table.textContent = "";
 
   const thead = document.createElement("thead");
-  const headRow = document.createElement("tr");
-
-  for (const col of tableData.columns) {
-    const th = document.createElement("th");
-    th.textContent = col.label;
-    if (col.section) {
-      th.title = col.section;
-    }
-    headRow.appendChild(th);
+  const hasSubsections = tableData.columns.some((col) => col.subsection);
+  if (hasSubsections) {
+    thead.appendChild(buildSectionRow(tableData.columns));
+    thead.appendChild(buildSubsectionRow(tableData.columns));
   }
-
-  thead.appendChild(headRow);
+  thead.appendChild(buildLabelRow(tableData.columns));
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
@@ -42,6 +36,59 @@ function renderTable(tableData) {
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
+}
+
+function buildSectionRow(columns) {
+  const row = document.createElement("tr");
+  for (const group of collapseGroups(columns, (col) => col.section || col.label)) {
+    const th = document.createElement("th");
+    th.textContent = group.label;
+    th.colSpan = group.span;
+    if (group.start === 0) {
+      th.classList.add("sticky-col");
+      th.rowSpan = 2;
+    }
+    row.appendChild(th);
+  }
+  return row;
+}
+
+function buildSubsectionRow(columns) {
+  const row = document.createElement("tr");
+  for (const group of collapseGroups(columns.slice(1), (col) => col.subsection || col.section || col.label)) {
+    const th = document.createElement("th");
+    th.textContent = group.label;
+    th.colSpan = group.span;
+    row.appendChild(th);
+  }
+  return row;
+}
+
+function buildLabelRow(columns) {
+  const row = document.createElement("tr");
+  for (const col of columns) {
+    const th = document.createElement("th");
+    th.textContent = col.label;
+    if (col.section) {
+      th.title = col.subsection ? `${col.section} / ${col.subsection}` : col.section;
+    }
+    row.appendChild(th);
+  }
+  return row;
+}
+
+function collapseGroups(columns, labelFor) {
+  const groups = [];
+  for (let index = 0; index < columns.length; index += 1) {
+    const label = labelFor(columns[index]);
+    const prev = groups[groups.length - 1];
+    if (prev && prev.label === label) {
+      prev.span += 1;
+      continue;
+    }
+    groups.push({ label, span: 1, start: index });
+  }
+  return groups;
 }
 
 function setupKeys() {

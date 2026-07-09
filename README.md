@@ -13,7 +13,7 @@ go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat
 ## Usage
 
 ```bash
-mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
+mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
 
 The input is a directory, not a single FTDC file. The tool discovers
@@ -26,7 +26,7 @@ them as one chronological capture.
 
 Required. Path to a MongoDB FTDC diagnostic data directory.
 
-### `--view server|wt|system|network|repl|summary|all`
+### `--view server|wt|system|network|repl|summary|io`
 
 Default: `summary`.
 
@@ -37,15 +37,16 @@ server   MongoDB serverStatus counters, latency, and queues
 wt       `mongod`: WiredTiger cache, eviction, checkpoint, and ticket metrics
          `mongos`: router connection-pool and executor metrics
 system   CPU, memory, and disk metrics
+io       Per-device disk metrics
 network  Connection activity and network-establishment diagnostics
 repl     `mongod`: replica-set lag and replication state
          `mongos`: router ping and replica-set monitor metrics
-summary  `mongod`: replication, server, network, system, and WiredTiger columns
-         `mongos`: router, server, network, system, and connection-pool columns
-all      Compatibility alias for summary
+summary  `mongod`: replication, server, network, system, io, and WiredTiger columns
+         `mongos`: router, server, network, system, io, and connection-pool columns
 ```
 
-`disk` is accepted as a compatibility alias for `system`.
+`--view disk` is no longer supported; use `--view system`.
+`--view all` is no longer supported; use `--view summary`.
 
 `--view summary` is intended for horizontal scrolling:
 
@@ -59,8 +60,8 @@ section-label row plus the column header every 50 data rows. The wide table uses
 old full-width dashed banner lines. The `--view summary` section order is:
 
 ```text
-mongod: replication | server | network | system | wiredTiger
-mongos: router | server | network | system | connPool
+mongod: replication | server | network | system | io | wiredTiger
+mongos: router | server | network | system | io | connPool
 ```
 
 ### `--interval N`
@@ -101,11 +102,11 @@ right before the metrics table. Empty buckets are skipped.
 Filters disk-derived fields to a single device.
 
 ```bash
-mongodb-ftdcstat diagnostic.data --view system --device sda
+mongodb-ftdcstat diagnostic.data --view io --device sda
 ```
 
-Without `--device`, disk rates are totals across discovered disks and `util%` is
-the maximum utilization among disks.
+Without `--device`, `--view system` and `--view summary` use the existing disk rollup.
+With `--view io`, devices are rendered independently in stable alphabetical order.
 
 ### `--from ISO_TIME` and `--to ISO_TIME`
 
@@ -227,7 +228,8 @@ The dashboard charts are grouped by the same logical sections as the selected
 view. For server metrics, the web UI splits charts into `server / Commands` and
 `server / Latency`. For system metrics, the web UI splits charts into
 `system / CPU`, `system / Memory`, `system / Disks`, and `system / PSI` when
-those metric groups are present in the loaded data. For WiredTiger metrics, the
+those metric groups are present in the loaded data. For `--view io`, the web UI
+renders one chart section per metric with one line per device. For WiredTiger metrics, the
 web UI splits charts into `wiredTiger / Tickets`,
 `wiredTiger / Per-second rates`, `wiredTiger / Checkpoint time`,
 `wiredTiger / Percentages`, and `wiredTiger / MiB` when those metric groups are
@@ -236,7 +238,7 @@ tooltip with the exact UTC timestamp and the visible series values at that
 timestamp.
 
 The Web TUI renders the same report as a horizontally scrollable table with a
-sticky header row, sticky `datetime` column, and keyboard navigation using
+sticky header row, sticky `datetime` column, grouped device headers for `--view io`, and keyboard navigation using
 `h`, `j`, `k`, `l`, `g`, `G`, and the arrow keys.
 
 ### `--listen ADDR`
@@ -252,7 +254,7 @@ mongodb-ftdcstat diagnostic.data --tui --listen 127.0.0.1:8080
 
 `--verbose` expands columns for focused views only. It applies to `--view repl`,
 `--view wt`, `--view system`, and `--view network`. It does not apply to `--view summary` or
-`--view all`, which always print the compact rollup for the detected process
+`--view io`, which always print the compact rollup for the detected process
 type.
 
 When used with `--view repl`, `--verbose` adds replication apply/buffer metrics
@@ -278,7 +280,7 @@ metrics.
 
 ### Reading `mongos` Disk Metrics
 
-For `mongos`, disk columns in `--view system` and `--view summary` come from
+For `mongos`, disk columns in `--view system`, `--view summary`, and `--view io` come from
 host-level FTDC `systemMetrics.disks.*` counters. They do not mean `mongos`
 has a local storage engine or persists collection data like `mongod`.
 
@@ -307,7 +309,7 @@ symptom counters after the default network columns:
 activeConn idleConn totalCreated/s queuedConn rejConn/s dnsSlow/s tlsSlow/s netTimeout/s
 ```
 
-Non-verbose output for all views is unchanged.
+Non-verbose output for all existing focused views is unchanged.
 
 Verbose replication metrics:
 
@@ -347,8 +349,8 @@ in a separate `pressure` section after the system columns:
 psiCpuSome% psiMemSome% psiMemFull% psiIoSome% psiIoFull%
 ```
 
-`--view summary`, `--view all`, and other views reject `--pressure` with a clear
-error. `--view summary` and `--view all` remain compact and are not expanded by
+`--view summary`, `--view io`, and other views reject `--pressure` with a clear
+error. `--view summary` and `--view io` remain compact and are not expanded by
 `--pressure`.
 
 For `--view system --pressure`, FTDC path selection adds only the explicit PSI
@@ -636,6 +638,15 @@ hsWriteMB/s first available rate:
             then / 1024 / 1024
 ```
 
+### `io` View
+
+`--view io` renders one top-level `io` section with one subgroup per device in
+the terminal table. It uses the same compact disk metric set as the summary `io`
+section and keeps devices in stable alphabetical order.
+
+`--view io --json` emits nested per-device values at
+`io.devices.<device>.<metric>`.
+
 ### `system` View
 
 Default `--view system` columns:
@@ -760,7 +771,7 @@ request size averages, client disconnects, and ingress admission counters.
 Those values are often hard to interpret without NIC, cloud, container, or OS
 bandwidth context.
 
-The `summary` and `all` views also include the compact network section after
+The `summary` view also includes the compact network section after
 server metrics, using the same `activeConn`, `idleConn`, and `totalCreated/s`
 columns. The header always includes the `network` section and `maxConn`
 metadata derived during metadata reading when the first usable `serverStatus`
@@ -827,3 +838,18 @@ Quick smoke test:
 ```bash
 ./mongodb-ftdcstat diagnostic.data --view summary --interval 43200
 ```
+
+It embeds the local URL in a `webUI` header section.
+
+```text
+webUI
+  url: http://127.0.0.1:8080/
+```
+
+`--web` cannot be combined with `--json`.
+
+
+The local web server exposes `/api/metadata`, `/api/data`, `/api/table`, `/app.js`, and `/style.css`.
+The browser does not render the terminal header as dashboard cards; it keeps the header text in a monospace `<pre>` block instead of dashboard cards for compatibility payloads.
+The Web UI keeps the existing `server / Commands` and `server / Latency` groupings, plus `wiredTiger / Tickets`, `wiredTiger / Per-second rates`, `wiredTiger / Checkpoint time`, `wiredTiger / Percentages`, and `wiredTiger / MiB` when those metric groups are present.
+Hovering a chart shows a Grafana-like tooltip with the exact UTC timestamp and the visible series values at that timestamp.

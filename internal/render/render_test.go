@@ -379,6 +379,89 @@ func TestSummaryViewIgnoresVerboseFlag(t *testing.T) {
 	}
 }
 
+func TestSummaryViewSplitsSystemAndIOSections(t *testing.T) {
+	row := testRow(0)
+	var buf bytes.Buffer
+	if err := Render(&buf, testMetadata(), nil, []derive.Row{row}, Options{View: "summary"}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	labelLine, headerLine := firstTableHeader(out)
+	for _, label := range []string{"replication", "server", "network", "system", "wiredTiger"} {
+		if !strings.Contains(labelLine, label) {
+			t.Fatalf("summary label line missing %s:\n%s", label, out)
+		}
+	}
+	if strings.Index(labelLine, " system ") >= strings.Index(labelLine, " wiredTiger") || !strings.Contains(labelLine, " io ") {
+		t.Fatalf("summary label line should place io between system and wiredTiger:\n%s", out)
+	}
+	if strings.Contains(labelLine, "all") || strings.Contains(labelLine, "disk") {
+		t.Fatalf("summary labels should not include aliases:\n%s", out)
+	}
+	if !strings.Contains(normalizedTableLine(headerLine), "user_cpu% system_cpu% iowait% residentMB virtualMB") {
+		t.Fatalf("summary system header missing core system columns:\n%s", out)
+	}
+	if !strings.Contains(normalizedTableLine(headerLine), "r/s w/s awaitS r_awaitS w_awaitS aqu-sz util%") {
+		t.Fatalf("summary io header missing disk columns:\n%s", out)
+	}
+}
+
+func TestIOViewRendersPerDeviceMetricsInAlphabeticalOrder(t *testing.T) {
+	row := derive.Row{
+		Time: time.Date(2026, 6, 4, 19, 0, 0, 0, time.UTC),
+		Values: map[string]any{
+			"disks": []map[string]any{
+				{"disk": "sdb", "r/s": float64(2), "w/s": float64(3), "awaitS": float64(0.2), "r_awaitS": float64(0.3), "w_awaitS": float64(0.4), "aqu-sz": float64(0.5), "util%": float64(60)},
+				{"disk": "sda", "r/s": float64(1), "w/s": float64(4), "awaitS": float64(0.1), "r_awaitS": float64(0.2), "w_awaitS": float64(0.3), "aqu-sz": float64(0.4), "util%": float64(50)},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := Render(&buf, testMetadata(), nil, []derive.Row{row}, Options{View: "io"}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	lines := strings.Split(out, "\n")
+	var ioLine, deviceLine string
+	for i, line := range lines {
+		if strings.Contains(line, "datetime") && i >= 2 {
+			ioLine = lines[i-2]
+			deviceLine = lines[i-1]
+			break
+		}
+	}
+	if !strings.Contains(ioLine, "io") {
+		t.Fatalf("io view missing top-level io section:\n%s", out)
+	}
+	if strings.Index(deviceLine, "sda") < 0 || strings.Index(deviceLine, "sdb") < 0 || strings.Index(deviceLine, "sda") > strings.Index(deviceLine, "sdb") {
+		t.Fatalf("device order should be alphabetical:\n%s", out)
+	}
+}
+
+func TestJSONIOViewUsesNestedDevices(t *testing.T) {
+	row := derive.Row{
+		Time: time.Date(2026, 6, 4, 19, 0, 0, 0, time.UTC),
+		Values: map[string]any{
+			"disks": []map[string]any{{"disk": "sda", "r/s": float64(1), "w/s": float64(2), "awaitS": float64(0.1), "r_awaitS": float64(0.2), "w_awaitS": float64(0.3), "aqu-sz": float64(0.4), "util%": float64(50)}},
+		},
+	}
+	var buf bytes.Buffer
+	if err := Render(&buf, testMetadata(), nil, []derive.Row{row}, Options{View: "io", JSON: true}); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	rows := payload["rows"].([]any)
+	ioSection := rows[0].(map[string]any)["io"].(map[string]any)
+	devices := ioSection["devices"].(map[string]any)
+	device := devices["sda"].(map[string]any)
+	if device["util%"] != float64(50) {
+		t.Fatalf("io.devices.sda.util%%=%v", device["util%"])
+	}
+}
+
 func TestSummaryViewIncludesNetworkSection(t *testing.T) {
 	row := networkRow(0)
 	var buf bytes.Buffer

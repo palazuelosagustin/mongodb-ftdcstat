@@ -13,7 +13,7 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 	}
 	text := string(data)
 	for _, want := range []string{
-		"--view server|wt|system|network|repl|summary|all",
+		"--view server|wt|system|network|repl|summary|io",
 		"Default: `summary`.",
 		"--interval",
 		"--avg",
@@ -24,7 +24,7 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"--web",
 		"--listen",
 		"network  Connection activity and network-establishment diagnostics",
-		"replication | server | network | system | wiredTiger",
+		"replication | server | network | system | io | wiredTiger",
 		"node1=localhost:27000",
 		"primary.optimeDate - member.optimeDate",
 		"lagS     replication header label",
@@ -43,13 +43,17 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"delta(opLatencies.<type>.latency) / delta(opLatencies.<type>.ops) / 1000000",
 		"`--view repl` is a compatibility alias that renders only the `replication`",
 		"`--view summary` is intended for horizontal scrolling",
+		"`--view disk` is no longer supported; use `--view system`.",
+		"`--view all` is no longer supported; use `--view summary`.",
+		"`--view io` renders one top-level `io` section with one subgroup per device",
+		"`--view io --json` emits nested per-device values at",
 		"`replication.majLagS` contains the majority commit lag",
 		"hbMs applyOps/s applyBufCnt applyBufMB",
 		"wtCache% dirty% cacheMB dirtyMB updatesMB",
 		"does not apply to `--view summary` or",
 		"`--view network`",
 		"activeConn idleConn totalCreated/s queuedConn rejConn/s dnsSlow/s tlsSlow/s netTimeout/s",
-		"`summary` and `all` views also include the compact network section after",
+		"`summary` view also includes the compact network section after",
 		"The header always includes the `network` section and `maxConn`",
 		"network\n  maxConn: <connections.current + connections.available from the first usable serverStatus sample>",
 		"derived during metadata reading",
@@ -81,7 +85,6 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"The `metricsRange` section prints the actual first and last rendered metric row",
 		"metricsRange\n  start: 2026-06-18T00:00:00Z\n  end:   2026-06-18T23:00:00Z",
 		"It is printed after `Parameters` and before `webUI` when present",
-		"`--web` starts a local HTTP server and still prints the normal terminal table",
 		"embeds the local URL in a `webUI` header section",
 		"webUI\n  url: http://127.0.0.1:",
 		"`--web` cannot be combined with `--json`",
@@ -104,7 +107,7 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"`wiredTiger / MiB`",
 		"Grafana-like tooltip with the exact UTC timestamp",
 		"visible series values at that timestamp",
-		"Large chart dataset detected. Consider using --avg 5m or --from/--to for better browser performance.",
+		"Large capture detected. Consider using --avg 5m or --from/--to for better browser performance.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("README missing %q", want)

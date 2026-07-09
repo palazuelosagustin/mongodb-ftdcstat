@@ -44,20 +44,44 @@ body {
 
 #metrics-table thead th {
   position: sticky;
-  top: 0;
-  z-index: 2;
   background: #222;
 }
 
+#metrics-table thead tr:nth-child(1) th {
+  top: 0;
+  z-index: 4;
+}
+
+#metrics-table thead tr:nth-child(2) th {
+  top: 23px;
+  z-index: 3;
+}
+
+#metrics-table thead tr:nth-child(3) th,
+#metrics-table thead tr:nth-child(1):last-child th,
+#metrics-table thead tr:nth-child(2):last-child th {
+  top: 46px;
+  z-index: 2;
+}
+
+#metrics-table thead tr:only-child th {
+  top: 0;
+}
+
+#metrics-table thead tr:nth-child(2):last-child th {
+  top: 23px;
+}
+
 #metrics-table th:first-child,
-#metrics-table td:first-child {
+#metrics-table td:first-child,
+#metrics-table .sticky-col {
   position: sticky;
   left: 0;
-  z-index: 1;
+  z-index: 5;
   background: #181818;
 }
 
-#metrics-table thead th:first-child {
-  z-index: 3;
+#metrics-table thead th:first-child,
+#metrics-table .sticky-col {
   background: #282828;
 }

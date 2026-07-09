@@ -216,7 +216,10 @@ func runBufferedOutput(w io.Writer, input captureInput, warnings []model.Warning
 	renderOpts.MetricsRange = metricsRange
 	renderOpts.AvgBucket = input.avgBucket
 	renderOpts.SampleCount = len(rows)
-	return render.RenderJSON(w, input.metadata, warnings, rows, renderOpts)
+	if renderOpts.JSON {
+		return render.RenderJSON(w, input.metadata, warnings, rows, renderOpts)
+	}
+	return render.RenderCLITable(w, input.metadata, rows, renderOpts)
 }
 
 func runWebOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options, opts cliOptions) error {
@@ -462,10 +465,10 @@ func parseArgs(args []string) (cliOptions, error) {
 		return opts, errors.New("--from must be before --to")
 	}
 	if opts.View == "disk" {
-		opts.View = "system"
+		return opts, errors.New("--view disk is no longer supported; use --view system")
 	}
 	if opts.View == "all" {
-		opts.View = "summary"
+		return opts, errors.New("--view all is no longer supported; use --view summary")
 	}
 	if opts.JSON && (opts.Web || opts.TUI) {
 		return opts, errors.New("--json cannot be combined with --web or --tui")
@@ -480,9 +483,9 @@ func parseArgs(args []string) (cliOptions, error) {
 		return opts, errors.New("--avg cannot be combined with --interval")
 	}
 	switch opts.View {
-	case "server", "wt", "system", "network", "repl", "summary":
+	case "server", "wt", "system", "network", "repl", "summary", "io":
 	default:
-		return opts, errors.New("--view must be one of server, wt, system, network, repl, summary, all")
+		return opts, errors.New("--view must be one of server, wt, system, network, repl, summary, io")
 	}
 	if opts.Pressure && opts.View != "system" {
 		return opts, errors.New("--pressure is only supported for --view system")

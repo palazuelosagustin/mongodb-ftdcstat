@@ -32,23 +32,17 @@ func TestParseArgsSummaryViewAccepted(t *testing.T) {
 	}
 }
 
-func TestParseArgsAllAliasesToSummary(t *testing.T) {
-	opts, err := parseArgs([]string{"diagnostic.data", "--view", "all"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if opts.View != "summary" {
-		t.Fatalf("view=%s", opts.View)
+func TestParseArgsAllViewRejectedWithReplacementHint(t *testing.T) {
+	_, err := parseArgs([]string{"diagnostic.data", "--view", "all"})
+	if err == nil || !strings.Contains(err.Error(), "--view all is no longer supported; use --view summary") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
-func TestParseArgsDiskAliasesToSystem(t *testing.T) {
-	opts, err := parseArgs([]string{"diagnostic.data", "--view", "disk"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if opts.View != "system" {
-		t.Fatalf("view=%s", opts.View)
+func TestParseArgsDiskViewRejectedWithReplacementHint(t *testing.T) {
+	_, err := parseArgs([]string{"diagnostic.data", "--view", "disk"})
+	if err == nil || !strings.Contains(err.Error(), "--view disk is no longer supported; use --view system") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
@@ -59,6 +53,16 @@ func TestParseArgsVerbose(t *testing.T) {
 	}
 	if !opts.Verbose {
 		t.Fatal("expected verbose=true")
+	}
+}
+
+func TestParseArgsIOViewAccepted(t *testing.T) {
+	opts, err := parseArgs([]string{"diagnostic.data", "--view", "io"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.View != "io" {
+		t.Fatalf("view=%s", opts.View)
 	}
 }
 
@@ -161,7 +165,7 @@ func TestParseArgsSystemVerbosePressure(t *testing.T) {
 }
 
 func TestParseArgsPressureRequiresSystemView(t *testing.T) {
-	_, err := parseArgs([]string{"diagnostic.data", "--view", "all", "--pressure"})
+	_, err := parseArgs([]string{"diagnostic.data", "--view", "summary", "--pressure"})
 	if err == nil || !strings.Contains(err.Error(), "--pressure is only supported for --view system") {
 		t.Fatalf("err=%v", err)
 	}
@@ -187,6 +191,12 @@ func TestParseArgsFromTo(t *testing.T) {
 func TestTableOutputDoesNotRequireBufferedRows(t *testing.T) {
 	if render.NeedsBufferedRows(render.Options{View: "summary"}) {
 		t.Fatal("table output should stream rows")
+	}
+}
+
+func TestIOViewRequiresBufferedRows(t *testing.T) {
+	if !render.NeedsBufferedRows(render.Options{View: "io"}) {
+		t.Fatal("io table output should buffer rows")
 	}
 }
 

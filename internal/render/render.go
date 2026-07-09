@@ -42,6 +42,7 @@ const headerRepeatRows = 50
 
 type tableSection struct {
 	Name       string
+	Subsection string
 	Start, End int
 }
 
@@ -67,7 +68,13 @@ func Render(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows
 		opts.MetricsRange = MetricsRangeFromRows(rows)
 	}
 	if NeedsBufferedRows(opts) {
-		return RenderJSON(w, metadata, warnings, rows, opts)
+		if opts.JSON {
+			return RenderJSON(w, metadata, warnings, rows, opts)
+		}
+		if opts.SampleCount == 0 {
+			opts.SampleCount = len(rows)
+		}
+		return RenderCLITable(w, metadata, rows, opts)
 	}
 	if opts.SampleCount == 0 {
 		opts.SampleCount = len(rows)
@@ -77,7 +84,7 @@ func Render(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows
 
 func RenderJSON(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows []derive.Row, opts Options) error {
 	rsInfo := derive.ReplSetInfoFromMetadata(metadata)
-	layout := layoutForView(opts.View, replicationNodeLabels(rsInfo, rows), opts.Verbose, opts.Pressure, metadata.ProcessKind())
+	layout := layoutForView(opts.View, replicationNodeLabels(rsInfo, rows), ioDeviceLabels(rows), opts.Verbose, opts.Pressure, metadata.ProcessKind())
 	payload := map[string]any{
 		"metadata": metadata.Summary(),
 		"rsInfo":   rsInfoForJSON(rsInfo),
@@ -102,7 +109,7 @@ func RenderCLITable(w io.Writer, metadata model.Metadata, rows []derive.Row, opt
 func RenderCLIMetrics(w io.Writer, metadata model.Metadata, rows []derive.Row, opts Options) error {
 	rsInfo := derive.ReplSetInfoFromMetadata(metadata)
 	nodeLabels := replicationNodeLabels(rsInfo, rows)
-	layout := layoutForView(opts.View, nodeLabels, opts.Verbose, opts.Pressure, metadata.ProcessKind())
+	layout := layoutForView(opts.View, nodeLabels, ioDeviceLabels(rows), opts.Verbose, opts.Pressure, metadata.ProcessKind())
 	loc := opts.TimeLocation
 	if loc == nil {
 		loc = time.UTC
@@ -116,29 +123,32 @@ func RenderCLIMetrics(w io.Writer, metadata model.Metadata, rows []derive.Row, o
 	return renderer.Close()
 }
 
-func layoutForView(view string, nodeLabels []string, verbose, pressure bool, processKind string) tableLayout {
+func layoutForView(view string, nodeLabels, deviceLabels []string, verbose, pressure bool, processKind string) tableLayout {
 	if processKind == model.ProcessKindMongos {
 		switch view {
 		case "server":
 			return buildLayout(nil, []namedColumns{{Name: "server", Columns: columnsForSection("server")}})
 		case "network":
 			return buildLayout(nil, []namedColumns{{Name: "network", Columns: networkColumns(verbose)}})
-		case "system", "disk":
+		case "system":
 			sections := []namedColumns{{Name: "system", Columns: systemColumns(verbose)}}
 			if pressure {
 				sections = append(sections, namedColumns{Name: "pressure", Columns: pressureColumns()})
 			}
 			return buildLayout(nil, sections)
+		case "io":
+			return buildLayout(nil, ioViewSections(deviceLabels))
 		case "wt":
 			return buildLayout(nil, []namedColumns{{Name: "connPool", Columns: connPoolColumns(verbose)}})
 		case "repl":
 			return buildLayout(nil, []namedColumns{{Name: "router", Columns: routerColumns()}})
-		case "summary", "all":
+		case "summary":
 			return buildLayout(nil, []namedColumns{
 				{Name: "router", Columns: routerColumns()},
 				{Name: "server", Columns: columnsForSection("server")},
 				{Name: "network", Columns: networkColumns(verbose)},
-				{Name: "system", Columns: systemColumns(verbose)},
+				{Name: "system", Columns: systemSummaryColumns(verbose)},
+				{Name: "io", Columns: ioColumns(false)},
 				{Name: "connPool", Columns: connPoolColumns(false)},
 			})
 		default:
@@ -146,7 +156,8 @@ func layoutForView(view string, nodeLabels []string, verbose, pressure bool, pro
 				{Name: "router", Columns: routerColumns()},
 				{Name: "server", Columns: columnsForSection("server")},
 				{Name: "network", Columns: networkColumns(verbose)},
-				{Name: "system", Columns: systemColumns(verbose)},
+				{Name: "system", Columns: systemSummaryColumns(verbose)},
+				{Name: "io", Columns: ioColumns(false)},
 				{Name: "connPool", Columns: connPoolColumns(false)},
 			})
 		}
@@ -154,45 +165,44 @@ func layoutForView(view string, nodeLabels []string, verbose, pressure bool, pro
 	replVerbose := verbose && view == "repl"
 	switch view {
 	case "server":
-		return buildLayout(nil, []namedColumns{
-			{Name: "server", Columns: columnsForSection("server")},
-		})
+		return buildLayout(nil, []namedColumns{{Name: "server", Columns: columnsForSection("server")}})
 	case "wt":
-		return buildLayout(nil, []namedColumns{
-			{Name: "wiredTiger", Columns: wiredTigerColumns(verbose)},
-		})
+		return buildLayout(nil, []namedColumns{{Name: "wiredTiger", Columns: wiredTigerColumns(verbose)}})
 	case "network":
-		return buildLayout(nil, []namedColumns{
-			{Name: "network", Columns: networkColumns(verbose)},
-		})
-	case "system", "disk":
+		return buildLayout(nil, []namedColumns{{Name: "network", Columns: networkColumns(verbose)}})
+	case "system":
 		sections := []namedColumns{{Name: "system", Columns: systemColumns(verbose)}}
 		if pressure {
 			sections = append(sections, namedColumns{Name: "pressure", Columns: pressureColumns()})
 		}
 		return buildLayout(nil, sections)
+	case "io":
+		return buildLayout(nil, ioViewSections(deviceLabels))
 	case "repl":
 		return buildLayout(replicationColumns(nodeLabels, replVerbose), nil)
-	case "summary", "all":
+	case "summary":
 		return buildLayout(replicationColumns(nodeLabels, false), []namedColumns{
 			{Name: "server", Columns: columnsForSection("server")},
 			{Name: "network", Columns: columnsForSection("network")},
-			{Name: "system", Columns: columnsForSection("system")},
+			{Name: "system", Columns: systemSummaryColumns(false)},
+			{Name: "io", Columns: ioColumns(false)},
 			{Name: "wiredTiger", Columns: columnsForSection("wiredTiger")},
 		})
 	default:
 		return buildLayout(replicationColumns(nodeLabels, false), []namedColumns{
 			{Name: "server", Columns: columnsForSection("server")},
 			{Name: "network", Columns: columnsForSection("network")},
-			{Name: "system", Columns: columnsForSection("system")},
+			{Name: "system", Columns: systemSummaryColumns(false)},
+			{Name: "io", Columns: ioColumns(false)},
 			{Name: "wiredTiger", Columns: columnsForSection("wiredTiger")},
 		})
 	}
 }
 
 type namedColumns struct {
-	Name    string
-	Columns []string
+	Name       string
+	Subsection string
+	Columns    []string
 }
 
 func buildLayout(replicationCols []string, sections []namedColumns) tableLayout {
@@ -206,7 +216,7 @@ func buildLayout(replicationCols []string, sections []namedColumns) tableLayout 
 	for _, section := range sections {
 		start := len(cols)
 		cols = append(cols, section.Columns...)
-		tableSections = append(tableSections, tableSection{Name: section.Name, Start: start, End: len(cols)})
+		tableSections = append(tableSections, tableSection{Name: section.Name, Subsection: section.Subsection, Start: start, End: len(cols)})
 	}
 	return tableLayout{Columns: cols, Sections: tableSections}
 }
@@ -237,6 +247,51 @@ func replicationNodeLabels(info derive.ReplSetInfo, rows []derive.Row) []string 
 		labels = append(labels, fmt.Sprintf("node%d", n))
 	}
 	return labels
+}
+
+func ioDeviceLabels(rows []derive.Row) []string {
+	seen := map[string]bool{}
+	var labels []string
+	for _, row := range rows {
+		devices, ok := row.Values["disks"].([]map[string]any)
+		if !ok {
+			continue
+		}
+		for _, device := range devices {
+			name, _ := device["disk"].(string)
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			labels = append(labels, name)
+		}
+	}
+	sort.Strings(labels)
+	return labels
+}
+
+func ioColumnKey(device, metric string) string {
+	return "io::" + device + "::" + metric
+}
+
+func parseIOColumnKey(col string) (string, string, bool) {
+	parts := strings.Split(col, "::")
+	if len(parts) != 3 || parts[0] != "io" || parts[1] == "" || parts[2] == "" {
+		return "", "", false
+	}
+	return parts[1], parts[2], true
+}
+
+func ioViewSections(deviceLabels []string) []namedColumns {
+	sections := make([]namedColumns, 0, len(deviceLabels))
+	for _, device := range deviceLabels {
+		cols := make([]string, 0, len(ioColumns(false)))
+		for _, metric := range ioColumns(false) {
+			cols = append(cols, ioColumnKey(device, metric))
+		}
+		sections = append(sections, namedColumns{Name: "io", Subsection: device, Columns: cols})
+	}
+	return sections
 }
 
 func nodeLabelNumber(label string) (int, bool) {
@@ -382,6 +437,7 @@ func rowsForJSON(rows []derive.Row, layout tableLayout) []map[string]any {
 		if row.ProcessMarker != "" {
 			item["processMarker"] = row.ProcessMarker
 		}
+		ioDevices := map[string]map[string]any{}
 		for _, section := range layout.Sections {
 			if section.Name == "replication" {
 				replication := map[string]any{}
@@ -392,31 +448,33 @@ func rowsForJSON(rows []derive.Row, layout tableLayout) []map[string]any {
 						continue
 					}
 					if !isNodeLagColumn(col) {
-						replication[metricJSONName(col)] = nil
-						if value, ok := row.Values[col]; ok {
-							replication[metricJSONName(col)] = value
-						}
+						replication[metricJSONName(col)] = valueForColumn(row, col)
 						continue
 					}
-					if value, ok := row.Values[col]; ok {
-						lagValues[col] = value
-					} else {
-						lagValues[col] = nil
-					}
+					lagValues[col] = valueForColumn(row, col)
 				}
 				replication["lagS"] = lagValues
 				item[section.Name] = replication
 				continue
 			}
+			if section.Name == "io" && section.Subsection != "" {
+				values := map[string]any{}
+				for i := section.Start; i < section.End && i < len(layout.Columns); i++ {
+					col := layout.Columns[i]
+					values[metricJSONName(col)] = valueForColumn(row, col)
+				}
+				ioDevices[section.Subsection] = values
+				continue
+			}
 			values := map[string]any{}
 			for i := section.Start; i < section.End && i < len(layout.Columns); i++ {
 				col := layout.Columns[i]
-				values[metricJSONName(col)] = nil
-				if value, ok := row.Values[col]; ok {
-					values[metricJSONName(col)] = value
-				}
+				values[metricJSONName(col)] = valueForColumn(row, col)
 			}
 			item[section.Name] = values
+		}
+		if len(ioDevices) > 0 {
+			item["io"] = map[string]any{"devices": ioDevices}
 		}
 		out = append(out, item)
 	}
@@ -557,9 +615,12 @@ func NewStreamingRenderer(w io.Writer, metadata model.Metadata, opts Options) (*
 	if opts.JSON {
 		return nil, fmt.Errorf("streaming renderer does not support JSON output")
 	}
+	if opts.View == "io" {
+		return nil, fmt.Errorf("streaming renderer does not support io view")
+	}
 	rsInfo := derive.ReplSetInfoFromMetadata(metadata)
 	nodeLabels := replicationNodeLabels(rsInfo, nil)
-	layout := layoutForView(opts.View, nodeLabels, opts.Verbose, opts.Pressure, metadata.ProcessKind())
+	layout := layoutForView(opts.View, nodeLabels, nil, opts.Verbose, opts.Pressure, metadata.ProcessKind())
 	loc := opts.TimeLocation
 	if loc == nil {
 		loc = time.UTC
@@ -646,7 +707,12 @@ func (r *StreamingRenderer) Close() error {
 }
 
 func (r *StreamingRenderer) printHeader() {
-	printGroupLine(r.w, r.widths, r.sections, r.separators)
+	if hasSubsections(r.sections) {
+		printGroupLine(r.w, r.widths, collapseSections(r.sections), r.separators)
+		printGroupLine(r.w, r.widths, r.sections, r.separators)
+	} else {
+		printGroupLine(r.w, r.widths, r.sections, r.separators)
+	}
 	printLine(r.w, r.header, r.cols, r.widths, r.separators, true)
 }
 
@@ -657,7 +723,7 @@ func tableLineForRow(cols []string, row derive.Row, loc *time.Location) []string
 			line[i] = fixed
 			continue
 		}
-		line[i] = format(row.Values[col], col)
+		line[i] = format(valueForColumn(row, col), col)
 	}
 	return line
 }
@@ -684,6 +750,9 @@ func printGroupLine(w io.Writer, widths []int, sections []tableSection, separato
 		endPos := positions[end-1] + widths[end-1]
 		span := endPos - startPos
 		label := section.Name
+		if section.Subsection != "" {
+			label = section.Subsection
+		}
 		if len(label) > span {
 			label = label[:span]
 		}
@@ -691,6 +760,35 @@ func printGroupLine(w io.Writer, widths []int, sections []tableSection, separato
 		copy(line[offset:], label)
 	}
 	fmt.Fprintln(w, strings.TrimRight(string(line), " "))
+}
+
+func hasSubsections(sections []tableSection) bool {
+	for _, section := range sections {
+		if section.Subsection != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func collapseSections(sections []tableSection) []tableSection {
+	if len(sections) == 0 {
+		return nil
+	}
+	out := make([]tableSection, 0, len(sections))
+	current := sections[0]
+	current.Subsection = ""
+	for _, section := range sections[1:] {
+		if section.Name == current.Name {
+			current.End = section.End
+			continue
+		}
+		out = append(out, current)
+		current = section
+		current.Subsection = ""
+	}
+	out = append(out, current)
+	return out
 }
 
 func columnPositions(widths []int, separators map[int]bool) ([]int, int) {
@@ -748,6 +846,10 @@ func displayColumns(cols []string) []string {
 			out[i] = "datetime"
 		case "lagSLabel":
 			out[i] = "lagS"
+		default:
+			if _, metric, ok := parseIOColumnKey(col); ok {
+				out[i] = metric
+			}
 		}
 	}
 	return out
@@ -762,6 +864,27 @@ func fixedColumnValue(col string, row derive.Row, loc *time.Location) (string, b
 	default:
 		return "", false
 	}
+}
+
+func valueForColumn(row derive.Row, col string) any {
+	if value, ok := row.Values[col]; ok {
+		return value
+	}
+	device, metric, ok := parseIOColumnKey(col)
+	if !ok {
+		return nil
+	}
+	devices, ok := row.Values["disks"].([]map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, item := range devices {
+		name, _ := item["disk"].(string)
+		if name == device {
+			return item[metric]
+		}
+	}
+	return nil
 }
 
 func formatRowTime(t time.Time, loc *time.Location) string {

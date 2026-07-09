@@ -62,10 +62,11 @@ type ReportTable struct {
 }
 
 type ReportColumn struct {
-	Key     string `json:"key"`
-	Label   string `json:"label"`
-	Section string `json:"section,omitempty"`
-	Fixed   bool   `json:"fixed,omitempty"`
+	Key        string `json:"key"`
+	Label      string `json:"label"`
+	Section    string `json:"section,omitempty"`
+	Subsection string `json:"subsection,omitempty"`
+	Fixed      bool   `json:"fixed,omitempty"`
 }
 
 type ReportRow struct {
@@ -144,7 +145,11 @@ func BuildDataset(metadata model.Metadata, warnings []model.Warning, rows []deri
 		rows = aggregate.AverageRows(rows, opts.Avg)
 	}
 	desc := render.DescribeView(metadata, rows, renderOpts)
-	sections := buildSections(desc, opts.View)
+	sections := buildSections(desc, opts.View, rows)
+	dataRows := buildRows(rows, sections, loc)
+	if opts.View == "io" {
+		dataRows = buildIORows(rows, sections, loc)
+	}
 	return Dataset{
 		Metadata: MetadataResponse{
 			View:       opts.View,
@@ -160,9 +165,9 @@ func BuildDataset(metadata model.Metadata, warnings []model.Warning, rows []deri
 			View:     opts.View,
 			Avg:      avgInfo(opts.Avg),
 			Sections: sectionColumns(sections),
-			Rows:     buildRows(rows, sections, loc),
+			Rows:     dataRows,
 		},
-		Table: buildReportTable(rows, sections, loc),
+		Table: buildReportTableFromDescription(rows, desc.Sections, loc),
 	}
 }
 
@@ -331,6 +336,18 @@ func (s *Server) route(path string) ([]byte, string, int) {
 }
 
 func buildReportTable(rows []derive.Row, sections []Section, loc *time.Location) ReportTable {
+	descSections := make([]render.ViewSection, 0, len(sections))
+	for _, section := range sections {
+		cols := make([]string, 0, len(section.Metrics))
+		for _, metric := range section.Metrics {
+			cols = append(cols, metric.Column)
+		}
+		descSections = append(descSections, render.ViewSection{Name: section.Name, Columns: cols})
+	}
+	return buildReportTableFromDescription(rows, descSections, loc)
+}
+
+func buildReportTableFromDescription(rows []derive.Row, descSections []render.ViewSection, loc *time.Location) ReportTable {
 	if loc == nil {
 		loc = time.UTC
 	}
@@ -344,14 +361,19 @@ func buildReportTable(rows []derive.Row, sections []Section, loc *time.Location)
 		format string
 	}
 	refs := make([]columnRef, 0)
-	for _, section := range sections {
-		for _, metric := range section.Metrics {
+	for _, section := range descSections {
+		for _, column := range section.Columns {
+			if column == "lagSLabel" {
+				continue
+			}
+			info := render.MetricInfoForColumn(column)
 			columns = append(columns, ReportColumn{
-				Key:     metric.JSONName,
-				Label:   metric.Label,
-				Section: section.Name,
+				Key:        info.JSONName,
+				Label:      labelForReportColumn(column),
+				Section:    section.Name,
+				Subsection: section.Subsection,
 			})
-			refs = append(refs, columnRef{column: metric.Column, format: metric.Format})
+			refs = append(refs, columnRef{column: column, format: info.Format})
 		}
 	}
 	outRows := make([]ReportRow, 0, len(rows))
@@ -359,11 +381,40 @@ func buildReportTable(rows []derive.Row, sections []Section, loc *time.Location)
 		cells := make([]string, 0, len(columns))
 		cells = append(cells, row.Time.In(loc).Format(time.RFC3339))
 		for _, ref := range refs {
-			cells = append(cells, formatTableValue(row.Values[ref.column], ref.format))
+			cells = append(cells, formatTableValue(reportValueForColumn(row, ref.column), ref.format))
 		}
 		outRows = append(outRows, ReportRow{Cells: cells})
 	}
 	return ReportTable{Columns: columns, Rows: outRows}
+}
+
+func labelForReportColumn(column string) string {
+	parts := strings.Split(column, "::")
+	if len(parts) == 3 && parts[0] == "io" {
+		return parts[2]
+	}
+	return column
+}
+
+func reportValueForColumn(row derive.Row, column string) any {
+	if value, ok := row.Values[column]; ok {
+		return value
+	}
+	parts := strings.Split(column, "::")
+	if len(parts) != 3 || parts[0] != "io" {
+		return nil
+	}
+	devices, ok := row.Values["disks"].([]map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, item := range devices {
+		name, _ := item["disk"].(string)
+		if name == parts[1] {
+			return item[parts[2]]
+		}
+	}
+	return nil
 }
 
 func formatTableValue(value any, format string) string {
@@ -553,11 +604,58 @@ func timeRangeInfo(r model.TimeRange, loc *time.Location) TimeRangeInfo {
 	return out
 }
 
-func buildSections(desc render.ViewDescription, view string) []Section {
+func buildSections(desc render.ViewDescription, view string, rows []derive.Row) []Section {
+	if view == "io" {
+		return buildIOSections(rows)
+	}
 	if hasDashboardSplitCandidates(desc.Sections) {
 		return buildDashboardSections(desc, view)
 	}
 	return buildDefaultSections(desc.Sections, view)
+}
+
+func buildIOSections(rows []derive.Row) []Section {
+	devices := ioDevices(rows)
+	sections := make([]Section, 0, len(ioMetrics()))
+	for _, metricName := range ioMetrics() {
+		metrics := make([]Metric, 0, len(devices))
+		for _, device := range devices {
+			metrics = append(metrics, Metric{
+				Column:   "io::" + device + "::" + metricName,
+				Label:    device,
+				JSONName: device,
+				Format:   render.MetricInfoForColumn(metricName).Format,
+				Default:  true,
+			})
+		}
+		sections = append(sections, Section{Name: metricName, Metrics: metrics})
+	}
+	return sections
+}
+
+func ioDevices(rows []derive.Row) []string {
+	seen := map[string]bool{}
+	var devices []string
+	for _, row := range rows {
+		diskRows, ok := row.Values["disks"].([]map[string]any)
+		if !ok {
+			continue
+		}
+		for _, disk := range diskRows {
+			name, _ := disk["disk"].(string)
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			devices = append(devices, name)
+		}
+	}
+	sort.Strings(devices)
+	return devices
+}
+
+func ioMetrics() []string {
+	return []string{"r/s", "w/s", "awaitS", "r_awaitS", "w_awaitS", "aqu-sz", "util%"}
 }
 
 func buildDefaultSections(descSections []render.ViewSection, view string) []Section {
@@ -597,21 +695,21 @@ func buildDashboardSections(desc render.ViewDescription, view string) []Section 
 
 	defs := []struct {
 		name         string
-		source       string
+		sources      []string
 		defaultInAll bool
 		columns      []string
 	}{
-		{name: "server / Commands", source: "server", defaultInAll: false, columns: []string{"qTot", "ins/s", "qry/s", "upd/s", "del/s", "getm/s", "cmd/s"}},
-		{name: "server / Latency", source: "server", defaultInAll: false, columns: []string{"rLatS", "wLatS", "cLatS"}},
-		{name: "system / CPU", source: "system", defaultInAll: false, columns: []string{"user_cpu%", "system_cpu%", "iowait%", "ctxt/s"}},
-		{name: "system / Memory", source: "system", defaultInAll: false, columns: []string{"residentMB", "virtualMB", "swapIn/s", "swapOut/s"}},
-		{name: "system / Disks", source: "system", defaultInAll: false, columns: []string{"r/s", "w/s", "rkB/s", "wkB/s", "awaitS", "r_awaitS", "w_awaitS", "aqu-sz", "util%"}},
-		{name: "system / PSI", source: "pressure", defaultInAll: true, columns: []string{"psiCpuSome%", "psiMemSome%", "psiMemFull%", "psiIoSome%", "psiIoFull%"}},
-		{name: "wiredTiger / Tickets", source: "wiredTiger", defaultInAll: false, columns: []string{"rdTkt", "wrTkt"}},
-		{name: "wiredTiger / Per-second rates", source: "wiredTiger", defaultInAll: false, columns: []string{"wtRdMB/s", "wtWrMB/s", "evict/s", "appEvict/s", "evictWalks/s", "evictBusy/s", "ckptPages/s", "hsInsert/s", "hsRead/s", "hsWriteMB/s"}},
-		{name: "wiredTiger / Checkpoint time", source: "wiredTiger", defaultInAll: false, columns: []string{"ckptMS"}},
-		{name: "wiredTiger / Percentages", source: "wiredTiger", defaultInAll: false, columns: []string{"wtCache%", "dirty%"}},
-		{name: "wiredTiger / MiB", source: "wiredTiger", defaultInAll: false, columns: []string{"cacheMB", "dirtyMB", "updatesMB"}},
+		{name: "server / Commands", sources: []string{"server"}, defaultInAll: false, columns: []string{"qTot", "ins/s", "qry/s", "upd/s", "del/s", "getm/s", "cmd/s"}},
+		{name: "server / Latency", sources: []string{"server"}, defaultInAll: false, columns: []string{"rLatS", "wLatS", "cLatS"}},
+		{name: "system / CPU", sources: []string{"system"}, defaultInAll: false, columns: []string{"user_cpu%", "system_cpu%", "iowait%", "ctxt/s"}},
+		{name: "system / Memory", sources: []string{"system"}, defaultInAll: false, columns: []string{"residentMB", "virtualMB", "swapIn/s", "swapOut/s"}},
+		{name: "system / Disks", sources: []string{"io", "system"}, defaultInAll: false, columns: []string{"r/s", "w/s", "rkB/s", "wkB/s", "awaitS", "r_awaitS", "w_awaitS", "aqu-sz", "util%"}},
+		{name: "system / PSI", sources: []string{"pressure"}, defaultInAll: true, columns: []string{"psiCpuSome%", "psiMemSome%", "psiMemFull%", "psiIoSome%", "psiIoFull%"}},
+		{name: "wiredTiger / Tickets", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"rdTkt", "wrTkt"}},
+		{name: "wiredTiger / Per-second rates", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"wtRdMB/s", "wtWrMB/s", "evict/s", "appEvict/s", "evictWalks/s", "evictBusy/s", "ckptPages/s", "hsInsert/s", "hsRead/s", "hsWriteMB/s"}},
+		{name: "wiredTiger / Checkpoint time", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"ckptMS"}},
+		{name: "wiredTiger / Percentages", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"wtCache%", "dirty%"}},
+		{name: "wiredTiger / MiB", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"cacheMB", "dirtyMB", "updatesMB"}},
 	}
 
 	usedColumns := map[string]map[string]bool{}
@@ -621,13 +719,16 @@ func buildDashboardSections(desc render.ViewDescription, view string) []Section 
 			return
 		}
 		for _, def := range defs {
-			sourceCols := sectionColumns[def.source]
-			if len(sourceCols) == 0 {
-				continue
-			}
 			metrics := make([]Metric, 0, len(def.columns))
 			for _, column := range def.columns {
-				if !sourceCols[column] {
+				var source string
+				for _, candidate := range def.sources {
+					if sectionColumns[candidate][column] {
+						source = candidate
+						break
+					}
+				}
+				if source == "" {
 					continue
 				}
 				info := render.MetricInfoForColumn(column)
@@ -638,10 +739,10 @@ func buildDashboardSections(desc render.ViewDescription, view string) []Section 
 					Format:   info.Format,
 					Default:  def.defaultInAll || defaultMetricForView(view, def.name, column),
 				})
-				if usedColumns[def.source] == nil {
-					usedColumns[def.source] = map[string]bool{}
+				if usedColumns[source] == nil {
+					usedColumns[source] = map[string]bool{}
 				}
-				usedColumns[def.source][column] = true
+				usedColumns[source][column] = true
 			}
 			if len(metrics) > 0 {
 				splitOut = append(splitOut, Section{Name: def.name, Metrics: metrics})
@@ -651,8 +752,8 @@ func buildDashboardSections(desc render.ViewDescription, view string) []Section 
 
 	var out []Section
 	for _, section := range desc.Sections {
-		if section.Name == "server" || section.Name == "system" || section.Name == "pressure" || section.Name == "wiredTiger" {
-			if section.Name == "server" || section.Name == "system" || section.Name == "wiredTiger" {
+		if section.Name == "server" || section.Name == "system" || section.Name == "io" || section.Name == "pressure" || section.Name == "wiredTiger" {
+			if section.Name == "server" || section.Name == "system" || section.Name == "io" || section.Name == "wiredTiger" {
 				appendSplitSections()
 				for _, split := range splitOut {
 					if strings.HasPrefix(split.Name, section.Name+" /") {
@@ -684,7 +785,7 @@ func buildDashboardSections(desc render.ViewDescription, view string) []Section 
 
 func hasDashboardSplitCandidates(sections []render.ViewSection) bool {
 	for _, section := range sections {
-		if section.Name == "server" || section.Name == "system" || section.Name == "pressure" || section.Name == "wiredTiger" {
+		if section.Name == "server" || section.Name == "system" || section.Name == "io" || section.Name == "pressure" || section.Name == "wiredTiger" {
 			return true
 		}
 	}
@@ -738,6 +839,38 @@ func inSet(value string, set ...string) bool {
 		}
 	}
 	return false
+}
+
+func buildIORows(rows []derive.Row, sections []Section, loc *time.Location) []DataRow {
+	out := make([]DataRow, 0, len(rows))
+	for _, row := range rows {
+		item := DataRow{
+			Datetime: row.Time.In(loc).Format(time.RFC3339),
+			Sections: map[string]map[string]any{},
+		}
+		disks, _ := row.Values["disks"].([]map[string]any)
+		byDevice := map[string]map[string]any{}
+		for _, disk := range disks {
+			name, _ := disk["disk"].(string)
+			if name == "" {
+				continue
+			}
+			byDevice[name] = disk
+		}
+		for _, section := range sections {
+			values := map[string]any{}
+			for _, metric := range section.Metrics {
+				values[metric.JSONName] = nil
+				if disk := byDevice[metric.JSONName]; disk != nil {
+					values[metric.JSONName] = disk[section.Name]
+				}
+			}
+			item.Sections[section.Name] = values
+		}
+		item.Values = item.Sections
+		out = append(out, item)
+	}
+	return out
 }
 
 func buildRows(rows []derive.Row, sections []Section, loc *time.Location) []DataRow {

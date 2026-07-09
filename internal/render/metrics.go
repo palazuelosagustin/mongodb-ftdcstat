@@ -35,15 +35,6 @@ var metricRegistry = []metricDefinition{
 	{Section: "router", Column: "ghaOps/s", Format: "rate", JSONName: "ghaOps/s"},
 	{Section: "router", Column: "ghaMS", Format: "millis", JSONName: "ghaMS"},
 
-	{Section: "system", Column: "r/s", Format: "rate", JSONName: "r/s"},
-	{Section: "system", Column: "w/s", Format: "rate", JSONName: "w/s"},
-	{Section: "system", Column: "rkB/s", Format: "rate", JSONName: "rkB/s", VerboseOnly: true},
-	{Section: "system", Column: "wkB/s", Format: "rate", JSONName: "wkB/s", VerboseOnly: true},
-	{Section: "system", Column: "awaitS", Format: "seconds", JSONName: "awaitS"},
-	{Section: "system", Column: "r_awaitS", Format: "seconds", JSONName: "r_awaitS"},
-	{Section: "system", Column: "w_awaitS", Format: "seconds", JSONName: "w_awaitS"},
-	{Section: "system", Column: "aqu-sz", Format: "seconds", JSONName: "aqu-sz"},
-	{Section: "system", Column: "util%", Format: "percent", JSONName: "util%"},
 	{Section: "system", Column: "user_cpu%", Format: "percent", JSONName: "user_cpu%"},
 	{Section: "system", Column: "system_cpu%", Format: "percent", JSONName: "system_cpu%"},
 	{Section: "system", Column: "iowait%", Format: "percent", JSONName: "iowait%"},
@@ -57,6 +48,16 @@ var metricRegistry = []metricDefinition{
 	{Section: "system", Column: "psiMemFull%", Format: "percent", JSONName: "psiMemFull%", PressureOnly: true},
 	{Section: "system", Column: "psiIoSome%", Format: "percent", JSONName: "psiIoSome%", PressureOnly: true},
 	{Section: "system", Column: "psiIoFull%", Format: "percent", JSONName: "psiIoFull%", PressureOnly: true},
+
+	{Section: "io", Column: "r/s", Format: "rate", JSONName: "r/s"},
+	{Section: "io", Column: "w/s", Format: "rate", JSONName: "w/s"},
+	{Section: "io", Column: "rkB/s", Format: "rate", JSONName: "rkB/s", VerboseOnly: true},
+	{Section: "io", Column: "wkB/s", Format: "rate", JSONName: "wkB/s", VerboseOnly: true},
+	{Section: "io", Column: "awaitS", Format: "seconds", JSONName: "awaitS"},
+	{Section: "io", Column: "r_awaitS", Format: "seconds", JSONName: "r_awaitS"},
+	{Section: "io", Column: "w_awaitS", Format: "seconds", JSONName: "w_awaitS"},
+	{Section: "io", Column: "aqu-sz", Format: "seconds", JSONName: "aqu-sz"},
+	{Section: "io", Column: "util%", Format: "percent", JSONName: "util%"},
 
 	{Section: "network", Column: "activeConn", Format: "integer", JSONName: "activeConn"},
 	{Section: "network", Column: "idleConn", Format: "integer", JSONName: "idleConn"},
@@ -135,17 +136,25 @@ func routerColumns() []string {
 }
 
 func systemColumns(verbose bool) []string {
+	cols := append([]string(nil), ioColumns(verbose)...)
+	cols = append(cols, systemSummaryColumns(verbose)...)
+	return cols
+}
+
+func systemSummaryColumns(verbose bool) []string {
+	cols := []string{"user_cpu%", "system_cpu%", "iowait%", "residentMB", "virtualMB"}
+	if verbose {
+		cols = append(cols, "ctxt/s", "swapIn/s", "swapOut/s")
+	}
+	return cols
+}
+
+func ioColumns(verbose bool) []string {
 	cols := []string{"r/s", "w/s"}
 	if verbose {
 		cols = append(cols, "rkB/s", "wkB/s")
 	}
-	cols = append(cols,
-		"awaitS", "r_awaitS", "w_awaitS", "aqu-sz", "util%",
-		"user_cpu%", "system_cpu%", "iowait%", "residentMB", "virtualMB",
-	)
-	if verbose {
-		cols = append(cols, "ctxt/s", "swapIn/s", "swapOut/s")
-	}
+	cols = append(cols, "awaitS", "r_awaitS", "w_awaitS", "aqu-sz", "util%")
 	return cols
 }
 
@@ -174,6 +183,9 @@ func replicationColumns(nodeLabels []string, verbose bool) []string {
 }
 
 func metricDefinitionForColumn(column string) (metricDefinition, bool) {
+	if _, metric, ok := parseIOColumnKey(column); ok {
+		column = metric
+	}
 	for _, def := range metricRegistry {
 		if def.Column == column {
 			return def, true

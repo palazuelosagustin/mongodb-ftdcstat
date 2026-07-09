@@ -13,8 +13,9 @@ type MetricInfo struct {
 }
 
 type ViewSection struct {
-	Name    string   `json:"name"`
-	Columns []string `json:"columns"`
+	Name       string   `json:"name"`
+	Subsection string   `json:"subsection,omitempty"`
+	Columns    []string `json:"columns"`
 }
 
 type ViewDescription struct {
@@ -25,15 +26,16 @@ type ViewDescription struct {
 func DescribeView(metadata model.Metadata, rows []derive.Row, opts Options) ViewDescription {
 	rsInfo := derive.ReplSetInfoFromMetadata(metadata)
 	nodeLabels := replicationNodeLabels(rsInfo, rows)
-	layout := layoutForView(opts.View, nodeLabels, opts.Verbose, opts.Pressure, metadata.ProcessKind())
+	layout := layoutForView(opts.View, nodeLabels, ioDeviceLabels(rows), opts.Verbose, opts.Pressure, metadata.ProcessKind())
 	sections := make([]ViewSection, 0, len(layout.Sections))
 	for _, section := range layout.Sections {
 		if section.Start < 0 || section.End > len(layout.Columns) || section.End < section.Start {
 			continue
 		}
 		sections = append(sections, ViewSection{
-			Name:    section.Name,
-			Columns: append([]string(nil), layout.Columns[section.Start:section.End]...),
+			Name:       section.Name,
+			Subsection: section.Subsection,
+			Columns:    append([]string(nil), layout.Columns[section.Start:section.End]...),
 		})
 	}
 	return ViewDescription{

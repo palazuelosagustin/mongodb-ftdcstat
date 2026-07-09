@@ -96,7 +96,7 @@ func mongosExactRequiredPaths(view string, verbose bool) []string {
 		"router.connPoolStats.replicaSetMonitor.getHostAndRefresh.totalCalls",
 		"router.connPoolStats.replicaSetMonitor.getHostAndRefresh.totalLatencyMicros",
 	}
-	if view == "summary" || view == "all" || view == "wt" {
+	if view == "summary" || view == "wt" {
 		paths = append(paths,
 			"router.networkInterfaceStats.TaskExecutorPool-0.executed",
 			"router.networkInterfaceStats.ShardRegistry.executed",
@@ -115,7 +115,7 @@ func mongosExactRequiredPaths(view string, verbose bool) []string {
 
 func mongosRequiredPrefixes(view string, verbose bool) []string {
 	var prefixes []string
-	if view == "summary" || view == "all" || view == "repl" {
+	if view == "summary" || view == "repl" {
 		prefixes = append(prefixes, "router.connPoolStats.replicaSetPingTimesMillis.")
 	}
 	_ = verbose

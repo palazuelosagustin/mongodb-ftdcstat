@@ -30,7 +30,6 @@ func TestViewNeedsPressureSystem(t *testing.T) {
 	}{
 		{"system", true, true},
 		{"summary", true, false},
-		{"all", true, false},
 		{"system", false, false},
 	}
 	for _, tc := range cases {

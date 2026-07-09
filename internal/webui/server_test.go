@@ -225,6 +225,42 @@ func TestNewHandlerServesMetadataDataAndIndex(t *testing.T) {
 	}
 }
 
+func TestBuildDatasetIOViewUsesMetricSectionsAndTableSubsections(t *testing.T) {
+	metadata := model.NewMetadata()
+	row := derive.Row{
+		Time: time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC),
+		Values: map[string]any{
+			"disks": []map[string]any{
+				{"disk": "sdb", "r/s": 8.0, "w/s": 6.0, "awaitS": 0.110, "r_awaitS": 0.090, "w_awaitS": 0.140, "aqu-sz": 1.2, "util%": 77.0},
+				{"disk": "sda", "r/s": 4.0, "w/s": 3.0, "awaitS": 0.010, "r_awaitS": 0.020, "w_awaitS": 0.030, "aqu-sz": 0.4, "util%": 55.0},
+			},
+		},
+	}
+
+	dataset := BuildDataset(metadata, nil, []derive.Row{row}, render.Options{View: "io"}, Options{
+		View:         "io",
+		TimeLocation: time.UTC,
+	})
+
+	wantPrefix := []string{"r/s", "w/s", "awaitS", "r_awaitS", "w_awaitS", "aqu-sz", "util%"}
+	if got := sectionNames(dataset.Metadata.Sections); strings.Join(got, "|") != strings.Join(wantPrefix, "|") {
+		t.Fatalf("sections=%v want=%v", got, wantPrefix)
+	}
+	if got := MetricNames(dataset.Metadata.Sections[0]); strings.Join(got, "|") != strings.Join([]string{"io::sda::r/s", "io::sdb::r/s"}, "|") {
+		t.Fatalf("metrics=%v", got)
+	}
+	first := dataset.Data.Rows[0].Sections["util%"]
+	if first["sda"] != 55.0 || first["sdb"] != 77.0 {
+		t.Fatalf("util rows=%v", first)
+	}
+	if len(dataset.Table.Columns) < 3 {
+		t.Fatalf("table columns=%d", len(dataset.Table.Columns))
+	}
+	if dataset.Table.Columns[1].Section != "io" || dataset.Table.Columns[1].Subsection != "sda" {
+		t.Fatalf("first io column=%#v", dataset.Table.Columns[1])
+	}
+}
+
 func TestBuildDatasetSplitsSystemDashboardSections(t *testing.T) {
 	metadata := model.NewMetadata()
 	row := derive.Row{
