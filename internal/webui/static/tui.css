@@ -86,6 +86,26 @@ body {
   top: var(--tui-header-row-height);
 }
 
+#metrics-table thead .section-row th,
+#metrics-table thead .section-cell {
+  background: #303030;
+  color: #f0f0f0;
+  font-weight: 700;
+  text-align: center;
+}
+
+#metrics-table thead .subsection-row th {
+  background: #262626;
+  color: #d8d8d8;
+  text-align: center;
+}
+
+#metrics-table thead .metric-row th {
+  background: #222;
+  color: #ddd;
+  font-weight: 400;
+}
+
 #metrics-table tbody tr:first-child td {
   padding-top: calc(2px + var(--tui-header-gap));
 }
@@ -96,10 +116,9 @@ body {
   position: sticky;
   left: 0;
   z-index: 5;
-  background: #181818;
 }
 
-#metrics-table thead th:first-child,
-#metrics-table .sticky-col {
-  background: #282828;
+#metrics-table tbody td:first-child,
+#metrics-table tbody .sticky-col {
+  background: #181818;
 }

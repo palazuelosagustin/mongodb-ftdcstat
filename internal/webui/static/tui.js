@@ -17,12 +17,14 @@ function renderTable(tableData) {
   table.textContent = "";
 
   const thead = document.createElement("thead");
-  const hasSubsections = tableData.columns.some((col) => col.subsection);
-  if (hasSubsections) {
-    thead.appendChild(buildSectionRow(tableData.columns));
-    thead.appendChild(buildSubsectionRow(tableData.columns));
+  const header = describeHeader(tableData.columns);
+  if (header.hasSections) {
+    thead.appendChild(buildSectionRow(tableData.columns, header));
+    if (header.hasSubsections) {
+      thead.appendChild(buildSubsectionRow(tableData.columns, header));
+    }
   }
-  thead.appendChild(buildLabelRow(tableData.columns));
+  thead.appendChild(buildLabelRow(tableData.columns, header));
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
@@ -38,24 +40,49 @@ function renderTable(tableData) {
   table.appendChild(tbody);
 }
 
-function buildSectionRow(columns) {
+function describeHeader(columns) {
+  const leadFixedCount = countLeadingFixedColumns(columns);
+  const metricColumns = columns.slice(leadFixedCount);
+  const hasSections = metricColumns.some((col) => col.section);
+  const hasSubsections = metricColumns.some((col) => col.subsection);
+  const rowSpan = hasSections ? (hasSubsections ? 3 : 2) : 1;
+  return { leadFixedCount, hasSections, hasSubsections, rowSpan };
+}
+
+function countLeadingFixedColumns(columns) {
+  let count = 0;
+  while (count < columns.length && columns[count].fixed) {
+    count += 1;
+  }
+  return count;
+}
+
+function buildSectionRow(columns, header) {
   const row = document.createElement("tr");
-  for (const group of collapseGroups(columns, (col) => col.section || col.label)) {
+  row.className = "section-row";
+
+  for (const col of columns.slice(0, header.leadFixedCount)) {
+    const th = document.createElement("th");
+    th.textContent = col.label;
+    th.rowSpan = header.rowSpan;
+    th.classList.add("sticky-col", "section-cell");
+    row.appendChild(th);
+  }
+
+  for (const group of collapseGroups(columns.slice(header.leadFixedCount), (col) => col.section || col.label)) {
     const th = document.createElement("th");
     th.textContent = group.label;
     th.colSpan = group.span;
-    if (group.start === 0) {
-      th.classList.add("sticky-col");
-      th.rowSpan = 2;
-    }
+    th.classList.add("section-cell");
     row.appendChild(th);
   }
   return row;
 }
 
-function buildSubsectionRow(columns) {
+function buildSubsectionRow(columns, header) {
   const row = document.createElement("tr");
-  for (const group of collapseGroups(columns.slice(1), (col) => col.subsection || col.section || col.label)) {
+  row.className = "subsection-row";
+  for (const group of collapseGroups(columns.slice(header.leadFixedCount), (col) => col.subsection || col.section || col.label)) {
     const th = document.createElement("th");
     th.textContent = group.label;
     th.colSpan = group.span;
@@ -64,9 +91,11 @@ function buildSubsectionRow(columns) {
   return row;
 }
 
-function buildLabelRow(columns) {
+function buildLabelRow(columns, header) {
   const row = document.createElement("tr");
-  for (const col of columns) {
+  row.className = "metric-row";
+  const start = header.hasSections ? header.leadFixedCount : 0;
+  for (const col of columns.slice(start)) {
     const th = document.createElement("th");
     th.textContent = col.label;
     if (col.section) {
