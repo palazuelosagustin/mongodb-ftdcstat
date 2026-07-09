@@ -97,7 +97,7 @@ func main() {
 		},
 	}
 
-	if opts.Web {
+	if serveHTTPEnabled(opts) {
 		if err := runWebOutput(os.Stdout, input, warnings, renderOpts, opts); err != nil {
 			printError(os.Stderr, err)
 			os.Exit(1)
@@ -115,6 +115,10 @@ func main() {
 		printError(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func serveHTTPEnabled(opts cliOptions) bool {
+	return opts.Web || opts.TUI
 }
 
 func runStreamingTableOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {

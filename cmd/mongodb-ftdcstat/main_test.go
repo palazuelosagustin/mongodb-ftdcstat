@@ -275,3 +275,20 @@ func TestParseArgsListenRequiresWebOrTUI(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestServeHTTPEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts cliOptions
+		want bool
+	}{
+		{name: "cli only", opts: cliOptions{}, want: false},
+		{name: "web only", opts: cliOptions{Web: true}, want: true},
+		{name: "tui only", opts: cliOptions{TUI: true}, want: true},
+		{name: "web and tui", opts: cliOptions{Web: true, TUI: true}, want: true},
+	} {
+		if got := serveHTTPEnabled(tc.opts); got != tc.want {
+			t.Fatalf("%s: got %v want %v", tc.name, got, tc.want)
+		}
+	}
+}
