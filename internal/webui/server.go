@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -34,6 +35,7 @@ type Options struct {
 type Dataset struct {
 	Metadata MetadataResponse `json:"metadata"`
 	Data     DataResponse     `json:"data"`
+	Table    ReportTable      `json:"table"`
 }
 
 type MetadataResponse struct {
@@ -52,6 +54,22 @@ type DataResponse struct {
 	Avg      AvgInfo             `json:"avg"`
 	Sections map[string][]string `json:"sections"`
 	Rows     []DataRow           `json:"rows"`
+}
+
+type ReportTable struct {
+	Columns []ReportColumn `json:"columns"`
+	Rows    []ReportRow    `json:"rows"`
+}
+
+type ReportColumn struct {
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Section string `json:"section,omitempty"`
+	Fixed   bool   `json:"fixed,omitempty"`
+}
+
+type ReportRow struct {
+	Cells []string `json:"cells"`
 }
 
 type AvgInfo struct {
@@ -99,8 +117,12 @@ type Server struct {
 	indexHTML  []byte
 	appJS      []byte
 	styleCSS   []byte
+	tuiHTML    []byte
+	tuiJS      []byte
+	tuiCSS     []byte
 	metaJSON   []byte
 	dataJSON   []byte
+	tableJSON  []byte
 	listenerFD int
 	host       string
 	port       int
@@ -140,6 +162,7 @@ func BuildDataset(metadata model.Metadata, warnings []model.Warning, rows []deri
 			Sections: sectionColumns(sections),
 			Rows:     buildRows(rows, sections, loc),
 		},
+		Table: buildReportTable(rows, sections, loc),
 	}
 }
 
@@ -156,7 +179,20 @@ func NewServer(dataset Dataset) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	tuiHTML, err := assets.ReadFile("static/tui.html")
+	if err != nil {
+		return nil, err
+	}
+	tuiJS, err := assets.ReadFile("static/tui.js")
+	if err != nil {
+		return nil, err
+	}
+	tuiCSS, err := assets.ReadFile("static/tui.css")
+	if err != nil {
+		return nil, err
+	}
 	indexHTML := bytes.ReplaceAll(indexBytes, []byte("{{ .Title }}"), []byte(fmt.Sprintf("mongodb-ftdcstat web UI - %s", dataset.Metadata.View)))
+	tuiHTML = bytes.ReplaceAll(tuiHTML, []byte("{{ .Title }}"), []byte(fmt.Sprintf("mongodb-ftdcstat Web TUI - %s", dataset.Metadata.View)))
 	metaJSON, err := marshalJSON(dataset.Metadata)
 	if err != nil {
 		return nil, err
@@ -165,13 +201,21 @@ func NewServer(dataset Dataset) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	tableJSON, err := marshalJSON(dataset.Table)
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
 		dataset:   dataset,
 		indexHTML: indexHTML,
 		appJS:     appJS,
 		styleCSS:  styleCSS,
+		tuiHTML:   tuiHTML,
+		tuiJS:     tuiJS,
+		tuiCSS:    tuiCSS,
 		metaJSON:  metaJSON,
 		dataJSON:  dataJSON,
+		tableJSON: tableJSON,
 	}, nil
 }
 
@@ -269,12 +313,95 @@ func (s *Server) route(path string) ([]byte, string, int) {
 		return s.appJS, "application/javascript; charset=utf-8", 200
 	case "/style.css":
 		return s.styleCSS, "text/css; charset=utf-8", 200
+	case "/tui":
+		return s.tuiHTML, "text/html; charset=utf-8", 200
+	case "/tui.js":
+		return s.tuiJS, "application/javascript; charset=utf-8", 200
+	case "/tui.css":
+		return s.tuiCSS, "text/css; charset=utf-8", 200
 	case "/api/metadata":
 		return s.metaJSON, "application/json; charset=utf-8", 200
 	case "/api/data":
 		return s.dataJSON, "application/json; charset=utf-8", 200
+	case "/api/table":
+		return s.tableJSON, "application/json; charset=utf-8", 200
 	default:
 		return []byte("not found\n"), "text/plain; charset=utf-8", 404
+	}
+}
+
+func buildReportTable(rows []derive.Row, sections []Section, loc *time.Location) ReportTable {
+	if loc == nil {
+		loc = time.UTC
+	}
+	columns := []ReportColumn{{
+		Key:   "datetime",
+		Label: "datetime",
+		Fixed: true,
+	}}
+	type columnRef struct {
+		column string
+		format string
+	}
+	refs := make([]columnRef, 0)
+	for _, section := range sections {
+		for _, metric := range section.Metrics {
+			columns = append(columns, ReportColumn{
+				Key:     metric.JSONName,
+				Label:   metric.Label,
+				Section: section.Name,
+			})
+			refs = append(refs, columnRef{column: metric.Column, format: metric.Format})
+		}
+	}
+	outRows := make([]ReportRow, 0, len(rows))
+	for _, row := range rows {
+		cells := make([]string, 0, len(columns))
+		cells = append(cells, row.Time.In(loc).Format(time.RFC3339))
+		for _, ref := range refs {
+			cells = append(cells, formatTableValue(row.Values[ref.column], ref.format))
+		}
+		outRows = append(outRows, ReportRow{Cells: cells})
+	}
+	return ReportTable{Columns: columns, Rows: outRows}
+}
+
+func formatTableValue(value any, format string) string {
+	if value == nil {
+		return "-"
+	}
+	switch v := value.(type) {
+	case string:
+		if v == "" {
+			return "-"
+		}
+		return v
+	case int:
+		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case float64:
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return "-"
+		}
+		switch format {
+		case "lag", "millis", "rate", "percent", "mib":
+			return fmt.Sprintf("%.1f", v)
+		case "seconds":
+			return fmt.Sprintf("%.3f", v)
+		case "integer", "bool":
+			return fmt.Sprintf("%.0f", v)
+		default:
+			if v == 0 {
+				return "0"
+			}
+			if math.Abs(v-math.Round(v)) < 0.000001 {
+				return fmt.Sprintf("%.0f", v)
+			}
+			return fmt.Sprintf("%.1f", v)
+		}
+	default:
+		return fmt.Sprint(v)
 	}
 }
 

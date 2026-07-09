@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Title }}</title>
+  <link rel="stylesheet" href="/tui.css">
+</head>
+<body>
+  <div id="topbar">
+    <strong>mongodb-ftdcstat Web TUI</strong>
+    <span id="status">Loading table...</span>
+  </div>
+  <div id="table-wrap">
+    <table id="metrics-table"></table>
+  </div>
+  <script src="/tui.js"></script>
+</body>
+</html>

@@ -151,6 +151,21 @@ func TestNewHandlerServesMetadataDataAndIndex(t *testing.T) {
 		t.Fatalf("app response=%q", appResp)
 	}
 
+	tuiResp := serveTestRequest(t, server, "GET /tui HTTP/1.1\r\nHost: localhost\r\n\r\n")
+	if !strings.Contains(tuiResp, "200 OK") || !strings.Contains(tuiResp, `/tui.css`) || !strings.Contains(tuiResp, `/tui.js`) {
+		t.Fatalf("tui response=%q", tuiResp)
+	}
+
+	tuiCSSResp := serveTestRequest(t, server, "GET /tui.css HTTP/1.1\r\nHost: localhost\r\n\r\n")
+	if !strings.Contains(tuiCSSResp, "200 OK") || !strings.Contains(tuiCSSResp, "position: sticky") {
+		t.Fatalf("tui.css response=%q", tuiCSSResp)
+	}
+
+	tuiJSResp := serveTestRequest(t, server, "GET /tui.js HTTP/1.1\r\nHost: localhost\r\n\r\n")
+	if !strings.Contains(tuiJSResp, "200 OK") || !strings.Contains(tuiJSResp, `fetch("/api/table")`) {
+		t.Fatalf("tui.js response=%q", tuiJSResp)
+	}
+
 	var metadataResp MetadataResponse
 	if err := json.Unmarshal(extractBody(t, serveTestRequest(t, server, "GET /api/metadata HTTP/1.1\r\nHost: localhost\r\n\r\n")), &metadataResp); err != nil {
 		t.Fatal(err)
@@ -174,6 +189,36 @@ func TestNewHandlerServesMetadataDataAndIndex(t *testing.T) {
 	}
 	if got := dataResp.Rows[0].Sections["network"]["activeConn"]; got != 11.0 {
 		t.Fatalf("activeConn=%v", got)
+	}
+
+	var tableResp ReportTable
+	if err := json.Unmarshal(extractBody(t, serveTestRequest(t, server, "GET /api/table HTTP/1.1\r\nHost: localhost\r\n\r\n")), &tableResp); err != nil {
+		t.Fatal(err)
+	}
+	if len(tableResp.Columns) < 2 {
+		t.Fatalf("columns=%d", len(tableResp.Columns))
+	}
+	if tableResp.Columns[0].Key != "datetime" || !tableResp.Columns[0].Fixed {
+		t.Fatalf("first column=%#v", tableResp.Columns[0])
+	}
+	if len(tableResp.Rows) != 1 {
+		t.Fatalf("table rows=%d", len(tableResp.Rows))
+	}
+	if len(tableResp.Rows[0].Cells) != len(tableResp.Columns) {
+		t.Fatalf("row cells=%d columns=%d", len(tableResp.Rows[0].Cells), len(tableResp.Columns))
+	}
+	if tableResp.Rows[0].Cells[0] != "2026-06-18T12:00:00Z" {
+		t.Fatalf("table datetime=%q", tableResp.Rows[0].Cells[0])
+	}
+	foundMetric := false
+	for _, col := range tableResp.Columns[1:] {
+		if col.Key == "activeConn" && col.Section == "network" {
+			foundMetric = true
+			break
+		}
+	}
+	if !foundMetric {
+		t.Fatalf("activeConn column missing: %#v", tableResp.Columns)
 	}
 }
 

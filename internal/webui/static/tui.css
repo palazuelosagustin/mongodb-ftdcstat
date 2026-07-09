@@ -1,0 +1,63 @@
+body {
+  margin: 0;
+  font-family: monospace;
+  background: #111;
+  color: #ddd;
+}
+
+#topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 32px;
+  padding: 0 12px;
+  border-bottom: 1px solid #333;
+  background: #181818;
+}
+
+#status {
+  color: #aaa;
+}
+
+#table-wrap {
+  height: calc(100vh - 33px);
+  overflow: auto;
+}
+
+#metrics-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+#metrics-table th,
+#metrics-table td {
+  padding: 2px 8px;
+  border-right: 1px solid #333;
+  border-bottom: 1px solid #222;
+  background: #111;
+}
+
+#metrics-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #222;
+}
+
+#metrics-table th:first-child,
+#metrics-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #181818;
+}
+
+#metrics-table thead th:first-child {
+  z-index: 3;
+  background: #282828;
+}
