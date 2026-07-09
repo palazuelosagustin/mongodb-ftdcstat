@@ -370,6 +370,49 @@ func TestBuildDatasetSplitsServerDashboardSections(t *testing.T) {
 	}
 }
 
+func TestBuildReportTableFormatsCellsAndKeepsDatetimeFixed(t *testing.T) {
+	sections := []Section{{
+		Name: "network",
+		Metrics: []Metric{
+			{Column: "activeConn", Label: "activeConn", JSONName: "activeConn", Format: "integer"},
+			{Column: "totalCreated/s", Label: "totalCreated/s", JSONName: "totalCreated/s", Format: "rate"},
+			{Column: "rLatS", Label: "rLatS", JSONName: "rLatS", Format: "seconds"},
+			{Column: "rsState", Label: "rsState", JSONName: "rsState", Format: "text"},
+		},
+	}}
+	rows := []derive.Row{{
+		Time: time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC),
+		Values: map[string]any{
+			"activeConn":     11.0,
+			"totalCreated/s": 2.5,
+			"rLatS":          0.125,
+			"rsState":        "PRIMARY",
+		},
+	}, {
+		Time: time.Date(2026, 6, 18, 12, 1, 0, 0, time.UTC),
+		Values: map[string]any{
+			"activeConn": 0.0,
+		},
+	}}
+
+	table := buildReportTable(rows, sections, time.UTC)
+	if len(table.Columns) != 5 {
+		t.Fatalf("columns=%d", len(table.Columns))
+	}
+	if table.Columns[0].Key != "datetime" || !table.Columns[0].Fixed {
+		t.Fatalf("first column=%#v", table.Columns[0])
+	}
+	if len(table.Rows) != 2 {
+		t.Fatalf("rows=%d", len(table.Rows))
+	}
+	if got := table.Rows[0].Cells; strings.Join(got, "|") != "2026-06-18T12:00:00Z|11|2.5|0.125|PRIMARY" {
+		t.Fatalf("row0=%v", got)
+	}
+	if got := table.Rows[1].Cells; strings.Join(got, "|") != "2026-06-18T12:01:00Z|0|-|-|-" {
+		t.Fatalf("row1=%v", got)
+	}
+}
+
 func TestBuildDatasetSummaryKeepsServerSplitInPlace(t *testing.T) {
 	metadata := model.NewMetadata()
 	row := derive.Row{

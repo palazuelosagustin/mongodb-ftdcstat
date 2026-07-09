@@ -13,7 +13,7 @@ go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat
 ## Usage
 
 ```bash
-mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--listen ADDR] [--verbose] [--pressure]
+mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
 
 The input is a directory, not a single FTDC file. The tool discovers
@@ -138,7 +138,7 @@ and unavailable lag values are `null`.
 
 ### `--web`
 
-`--web` starts a local HTTP server and still prints the normal terminal table.
+`--web` starts the local dashboard UI and still prints the normal terminal table.
 
 ```bash
 mongodb-ftdcstat diagnostic.data --web
@@ -146,17 +146,30 @@ mongodb-ftdcstat diagnostic.data --web --view summary --avg 5m
 mongodb-ftdcstat diagnostic.data --web --from "2026-06-04T19:00:00" --to "2026-06-04T20:00:00"
 ```
 
-Behavior:
+### `--tui`
 
-```text
-binds to 127.0.0.1 on a random available port by default
-prints the normal vmstat-like report and embeds the local URL in a `webUI` header section
-reuses the existing FTDC parsing and derived-row pipeline
-keeps --view, --from, --to, --verbose, and --pressure semantics
-groups charts by the same logical sections as the selected view
+`--tui` starts a browser-based table UI with a fixed `datetime` column and still
+prints the normal terminal table.
+
+```bash
+mongodb-ftdcstat diagnostic.data --tui
+mongodb-ftdcstat diagnostic.data --tui --view summary --avg 5m
+mongodb-ftdcstat diagnostic.data --web --tui --view summary
 ```
 
-Example stdout:
+Behavior for `--web` and `--tui`:
+
+```text
+starts one local HTTP server for either mode or both together
+binds to 127.0.0.1 on a random available port by default
+prints the normal vmstat-like report to stdout
+prints a `webUI` header section when --web is enabled
+prints a `webTUI` header section when --tui is enabled
+reuses the existing FTDC parsing and derived-row pipeline
+keeps --view, --from, --to, --verbose, and --pressure semantics
+```
+
+Example stdout with both enabled:
 
 ```text
 buildInfo
@@ -175,57 +188,67 @@ network
   maxConn: 409
 
 webUI
-  url: http://127.0.0.1:49231
+  url: http://127.0.0.1:49231/
+
+webTUI
+  url: http://127.0.0.1:49231/tui
 
 datetime                  | ...
 2026-06-04T19:00:00Z      | ...
 ```
 
-For large captures, prefer combining `--web` with `--avg` or with `--from` and
-`--to` to keep browser rendering responsive.
+For large captures, prefer combining `--web` or `--tui` with `--avg` or with
+`--from` and `--to` to keep browser rendering responsive.
 
 When the plotted dataset is large, the tool warns:
 
 ```text
-Large chart dataset detected. Consider using --avg 5m or --from/--to for better browser performance.
+warning: Large capture detected. Consider using --avg 5m or --from/--to for better browser performance.
 ```
 
-`--web` cannot be combined with `--json`.
+`--json` cannot be combined with `--web` or `--tui`.
 
-The local JSON API is exposed through `/api/metadata` and `/api/data`. Static
-assets are served from `/app.js` and `/style.css`.
-
-The first version serves a small offline UI from embedded assets and exposes:
+The local HTTP server exposes:
 
 ```text
-GET /              -> embedded static index.html
-GET /app.js        -> embedded JavaScript
-GET /style.css     -> embedded CSS
+GET /              -> embedded dashboard index.html
+GET /app.js        -> dashboard JavaScript
+GET /style.css     -> dashboard CSS
+GET /tui           -> embedded Web TUI page
+GET /tui.js        -> Web TUI JavaScript
+GET /tui.css       -> Web TUI CSS
 GET /api/metadata  -> capture/header metadata
 GET /api/data      -> selected derived rows or chart data
+GET /api/table     -> flattened table rows for the Web TUI
 ```
 
 `/api/metadata` includes `headerText`, a terminal-style preformatted header
-that mirrors the CLI report header as closely as possible. The frontend renders
+that mirrors the CLI report header as closely as possible. The dashboard renders
 it in a monospace `<pre>` block instead of dashboard cards.
 
-Charts are grouped by the same logical sections as the selected view. For
-server metrics, the web UI splits charts into `server / Commands` and `server / Latency`.
-For system metrics, the web UI splits charts into `system / CPU`, `system / Memory`,
-`system / Disks`, and `system / PSI` when those metric groups are present in the
-loaded data. For WiredTiger metrics, the web UI splits charts into
-`wiredTiger / Tickets`, `wiredTiger / Per-second rates`,
-`wiredTiger / Checkpoint time`, `wiredTiger / Percentages`, and
-`wiredTiger / MiB` when those metric groups are present in the loaded data.
-Hovering a section chart shows a Grafana-like tooltip with the exact UTC timestamp and the
-visible series values at that timestamp.
+The dashboard charts are grouped by the same logical sections as the selected
+view. For server metrics, the web UI splits charts into `server / Commands` and
+`server / Latency`. For system metrics, the web UI splits charts into
+`system / CPU`, `system / Memory`, `system / Disks`, and `system / PSI` when
+those metric groups are present in the loaded data. For WiredTiger metrics, the
+web UI splits charts into `wiredTiger / Tickets`,
+`wiredTiger / Per-second rates`, `wiredTiger / Checkpoint time`,
+`wiredTiger / Percentages`, and `wiredTiger / MiB` when those metric groups are
+present in the loaded data. Hovering a section chart shows a Grafana-like
+tooltip with the exact UTC timestamp and the visible series values at that
+timestamp.
+
+The Web TUI renders the same report as a horizontally scrollable table with a
+sticky header row, sticky `datetime` column, and keyboard navigation using
+`h`, `j`, `k`, `l`, `g`, `G`, and the arrow keys.
 
 ### `--listen ADDR`
 
-Overrides the default local bind address used by `--web`:
+Overrides the default local bind address used by `--web` or `--tui`:
 
 ```bash
 mongodb-ftdcstat diagnostic.data --web --listen 127.0.0.1:8080
+mongodb-ftdcstat diagnostic.data --tui --listen 127.0.0.1:8080
 ```
 
 ### `--verbose`
