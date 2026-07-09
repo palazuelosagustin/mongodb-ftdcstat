@@ -1,3 +1,9 @@
+:root {
+  --tui-row-height: 23px;
+  --tui-header-row-height: 23px;
+  --tui-header-gap: calc(var(--tui-row-height) * 2);
+}
+
 body {
   margin: 0;
   font-family: monospace;
@@ -42,9 +48,17 @@ body {
   background: #111;
 }
 
+#metrics-table tbody td {
+  box-sizing: border-box;
+  height: var(--tui-row-height);
+}
+
 #metrics-table thead th {
   position: sticky;
   background: #222;
+  box-sizing: border-box;
+  height: var(--tui-header-row-height);
+  line-height: 19px;
 }
 
 #metrics-table thead tr:nth-child(1) th {
@@ -53,14 +67,14 @@ body {
 }
 
 #metrics-table thead tr:nth-child(2) th {
-  top: 23px;
+  top: var(--tui-header-row-height);
   z-index: 3;
 }
 
 #metrics-table thead tr:nth-child(3) th,
 #metrics-table thead tr:nth-child(1):last-child th,
 #metrics-table thead tr:nth-child(2):last-child th {
-  top: 46px;
+  top: calc(var(--tui-header-row-height) * 2);
   z-index: 2;
 }
 
@@ -69,7 +83,11 @@ body {
 }
 
 #metrics-table thead tr:nth-child(2):last-child th {
-  top: 23px;
+  top: var(--tui-header-row-height);
+}
+
+#metrics-table tbody tr:first-child td {
+  padding-top: calc(2px + var(--tui-header-gap));
 }
 
 #metrics-table th:first-child,
