@@ -223,18 +223,18 @@ func TestHeaderPrintsCmdLineOptsAndExplicitParametersOnly(t *testing.T) {
 func TestHeaderPrintsWebUISectionBeforeTableWhenEnabled(t *testing.T) {
 	var buf bytes.Buffer
 	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{
-		View:   "server",
-		WebURL: "http://127.0.0.1:55508",
+		View:     "server",
+		WebLinks: WebLinks{WebURL: "http://127.0.0.1:55508/"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "webUI\n  url: http://127.0.0.1:55508\n") {
+	if !strings.Contains(out, "webUI\n  url: http://127.0.0.1:55508/\n") {
 		t.Fatalf("missing webUI header section:\n%s", out)
 	}
 	networkIdx := strings.Index(out, "\nnetwork\n  maxConn: 409\n")
-	webIdx := strings.Index(out, "\nwebUI\n  url: http://127.0.0.1:55508\n")
+	webIdx := strings.Index(out, "\nwebUI\n  url: http://127.0.0.1:55508/\n")
 	labelLine, _ := firstTableHeader(out)
 	tableIdx := strings.Index(out, labelLine)
 	if networkIdx < 0 || webIdx < 0 || tableIdx < 0 {
@@ -242,6 +242,52 @@ func TestHeaderPrintsWebUISectionBeforeTableWhenEnabled(t *testing.T) {
 	}
 	if !(networkIdx < webIdx && webIdx < tableIdx) {
 		t.Fatalf("webUI header should appear after network and before the metrics table:\n%s", out)
+	}
+}
+
+func TestHeaderPrintsWebUIAndWebTUISectionsWhenEnabled(t *testing.T) {
+	var buf bytes.Buffer
+	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{
+		View:     "server",
+		WebLinks: WebLinks{WebURL: "http://127.0.0.1:55508/", TUIURL: "http://127.0.0.1:55508/tui"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "webUI\n  url: http://127.0.0.1:55508/\n") {
+		t.Fatalf("missing webUI header section:\n%s", out)
+	}
+	if !strings.Contains(out, "webTUI\n  url: http://127.0.0.1:55508/tui\n") {
+		t.Fatalf("missing webTUI header section:\n%s", out)
+	}
+	webIdx := strings.Index(out, "\nwebUI\n  url: http://127.0.0.1:55508/\n")
+	tuiIdx := strings.Index(out, "\nwebTUI\n  url: http://127.0.0.1:55508/tui\n")
+	labelLine, _ := firstTableHeader(out)
+	tableIdx := strings.Index(out, labelLine)
+	if webIdx < 0 || tuiIdx < 0 || tableIdx < 0 {
+		t.Fatalf("expected webUI, webTUI, and table header sections:\n%s", out)
+	}
+	if !(webIdx < tuiIdx && tuiIdx < tableIdx) {
+		t.Fatalf("webUI and webTUI headers should appear before the metrics table:\n%s", out)
+	}
+}
+
+func TestHeaderPrintsOnlyWebTUISectionWhenEnabled(t *testing.T) {
+	var buf bytes.Buffer
+	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{
+		View:     "server",
+		WebLinks: WebLinks{TUIURL: "http://127.0.0.1:55508/tui"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "\nwebUI\n") {
+		t.Fatalf("unexpected webUI header with only tui enabled:\n%s", out)
+	}
+	if !strings.Contains(out, "webTUI\n  url: http://127.0.0.1:55508/tui\n") {
+		t.Fatalf("missing webTUI header section:\n%s", out)
 	}
 }
 
@@ -259,8 +305,8 @@ func TestHeaderOmitsWebUISectionWhenDisabled(t *testing.T) {
 func TestHeaderPrintsMetricsRangeAfterParametersAndBeforeWebUI(t *testing.T) {
 	var buf bytes.Buffer
 	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0), testRow(1)}, Options{
-		View:   "server",
-		WebURL: "http://127.0.0.1:55508",
+		View:     "server",
+		WebLinks: WebLinks{WebURL: "http://127.0.0.1:55508/"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -281,7 +327,6 @@ func TestHeaderPrintsMetricsRangeAfterParametersAndBeforeWebUI(t *testing.T) {
 		t.Fatalf("metricsRange should appear after Parameters and before webUI/table:\n%s", out)
 	}
 }
-
 func TestHeaderPrintsDashMetricsRangeWhenNoRows(t *testing.T) {
 	var buf bytes.Buffer
 	err := Render(&buf, testMetadata(), nil, nil, Options{View: "server"})

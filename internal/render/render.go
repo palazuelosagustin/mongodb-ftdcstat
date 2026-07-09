@@ -14,10 +14,15 @@ import (
 	"mongodb-ftdcstat/internal/model"
 )
 
+type WebLinks struct {
+	WebURL string
+	TUIURL string
+}
+
 type Options struct {
 	View         string
 	JSON         bool
-	WebURL       string
+	WebLinks     WebLinks
 	AvgBucket    time.Duration
 	MetricsRange MetricsRange
 	Verbose      bool
@@ -88,7 +93,7 @@ func renderTableRows(w io.Writer, metadata model.Metadata, rows []derive.Row, op
 	if loc == nil {
 		loc = time.UTC
 	}
-	renderHeader(w, metadata, rsInfo, loc, opts.WebURL, opts.MetricsRange)
+	renderHeader(w, metadata, rsInfo, loc, opts.WebLinks, opts.MetricsRange)
 	renderAverageNotice(w, opts.AvgBucket)
 	renderer := newStreamingRenderer(w, layout.Columns, layout.Sections, loc)
 	for _, row := range rows {
@@ -233,7 +238,7 @@ func nodeLabelNumber(label string) (int, bool) {
 	return n, true
 }
 
-func renderHeader(w io.Writer, metadata model.Metadata, rsInfo derive.ReplSetInfo, loc *time.Location, webURL string, metricsRange MetricsRange) {
+func renderHeader(w io.Writer, metadata model.Metadata, rsInfo derive.ReplSetInfo, loc *time.Location, webLinks WebLinks, metricsRange MetricsRange) {
 	build, _ := metadata.LatestDoc("buildInfo")
 	host, _ := metadata.LatestDoc("hostInfo")
 	cmd, _ := metadata.LatestDoc("getCmdLineOpts")
@@ -266,9 +271,7 @@ func renderHeader(w io.Writer, metadata model.Metadata, rsInfo derive.ReplSetInf
 	fmt.Fprintln(w)
 	renderMetricsRangeHeader(w, metricsRange)
 	renderNetworkHeader(w, metadata)
-	if webURL != "" {
-		renderWebUIHeader(w, webURL)
-	}
+	renderWebLinksHeader(w, webLinks)
 	fmt.Fprintln(w)
 }
 
@@ -290,11 +293,19 @@ func formatMetricsRangeTime(ts time.Time) string {
 	return ts.UTC().Format(time.RFC3339)
 }
 
-func renderWebUIHeader(w io.Writer, webURL string) {
-	fmt.Fprintln(w, "webUI")
-	fmt.Fprintf(w, "  url: %s\n", webURL)
+func renderWebLinksHeader(w io.Writer, webLinks WebLinks) {
+	if webLinks.WebURL == "" && webLinks.TUIURL == "" {
+		return
+	}
+	if webLinks.WebURL != "" {
+		fmt.Fprintln(w, "webUI")
+		fmt.Fprintf(w, "  url: %s\n", webLinks.WebURL)
+	}
+	if webLinks.TUIURL != "" {
+		fmt.Fprintln(w, "webTUI")
+		fmt.Fprintf(w, "  url: %s\n", webLinks.TUIURL)
+	}
 }
-
 func renderAverageNotice(w io.Writer, bucket time.Duration) {
 	if bucket <= 0 {
 		return
@@ -602,7 +613,7 @@ func NewStreamingRenderer(w io.Writer, metadata model.Metadata, opts Options) (*
 	if loc == nil {
 		loc = time.UTC
 	}
-	renderHeader(w, metadata, rsInfo, loc, opts.WebURL, opts.MetricsRange)
+	renderHeader(w, metadata, rsInfo, loc, opts.WebLinks, opts.MetricsRange)
 	renderAverageNotice(w, opts.AvgBucket)
 	return newStreamingRenderer(w, layout.Columns, layout.Sections, loc), nil
 }

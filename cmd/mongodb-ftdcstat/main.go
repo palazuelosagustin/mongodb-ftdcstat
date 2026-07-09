@@ -43,6 +43,28 @@ type captureInput struct {
 	streamerOpts derive.Options
 }
 
+type webLinks struct {
+	BaseURL string
+	WebURL  string
+	TUIURL  string
+}
+
+func buildWebLinks(address string) webLinks {
+	host := strings.TrimSpace(address)
+	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
+		base := strings.TrimRight(host, "/")
+		return webLinks{BaseURL: base, WebURL: base + "/", TUIURL: base + "/tui"}
+	}
+	if strings.HasPrefix(host, ":") {
+		host = "127.0.0.1" + host
+	}
+	if strings.HasPrefix(host, "0.0.0.0:") {
+		host = strings.Replace(host, "0.0.0.0:", "127.0.0.1:", 1)
+	}
+	base := "http://" + host
+	return webLinks{BaseURL: base, WebURL: base + "/", TUIURL: base + "/tui"}
+}
+
 func main() {
 	opts, err := parseArgs(os.Args[1:])
 	if err != nil {
@@ -194,7 +216,13 @@ func runWebOutput(w io.Writer, input captureInput, warnings []model.Warning, ren
 	if err != nil {
 		return err
 	}
-	renderOpts.WebURL = address
+	links := buildWebLinks(address)
+	if opts.Web {
+		renderOpts.WebLinks.WebURL = links.WebURL
+	}
+	if opts.TUI {
+		renderOpts.WebLinks.TUIURL = links.TUIURL
+	}
 	if err := render.Render(w, input.metadata, warnings, rows, renderOpts); err != nil {
 		_ = server.Close()
 		return err
