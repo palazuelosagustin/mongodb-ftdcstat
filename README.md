@@ -165,6 +165,7 @@ binds to 127.0.0.1 on a random available port by default
 prints the normal vmstat-like report to stdout
 prints a `webUI` header section when --web is enabled
 prints a `webTUI` header section when --tui is enabled
+prints `HTTP server is running. Press Ctrl+C to stop.` after the report
 reuses the existing FTDC parsing and derived-row pipeline
 keeps --view, --from, --to, --verbose, and --pressure semantics
 ```

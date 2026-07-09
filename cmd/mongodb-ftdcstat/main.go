@@ -49,19 +49,33 @@ type webLinks struct {
 	TUIURL  string
 }
 
+type webServer interface {
+	Listen(listen string) (string, error)
+	Serve() error
+	Close() error
+}
+
+var newWebServer = func(dataset webui.Dataset) (webServer, error) {
+	return webui.NewServer(dataset)
+}
+
 func buildWebLinks(address string) webLinks {
 	host := strings.TrimSpace(address)
-	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
-		base := strings.TrimRight(host, "/")
-		return webLinks{BaseURL: base, WebURL: base + "/", TUIURL: base + "/tui"}
+	scheme := "http://"
+	if strings.HasPrefix(host, "http://") {
+		host = strings.TrimPrefix(host, "http://")
+	} else if strings.HasPrefix(host, "https://") {
+		scheme = "https://"
+		host = strings.TrimPrefix(host, "https://")
 	}
+	host = strings.TrimRight(host, "/")
 	if strings.HasPrefix(host, ":") {
 		host = "127.0.0.1" + host
 	}
 	if strings.HasPrefix(host, "0.0.0.0:") {
 		host = strings.Replace(host, "0.0.0.0:", "127.0.0.1:", 1)
 	}
-	base := "http://" + host
+	base := scheme + host
 	return webLinks{BaseURL: base, WebURL: base + "/", TUIURL: base + "/tui"}
 }
 
@@ -208,7 +222,11 @@ func runWebOutput(w io.Writer, input captureInput, warnings []model.Warning, ren
 	if dataset.Metadata.RowCount > 5000 {
 		fmt.Fprintln(os.Stderr, "warning: Large capture detected. Consider using --avg 5m or --from/--to for better browser performance.")
 	}
-	server, err := webui.NewServer(dataset)
+	return serveRenderedWebOutput(w, input.metadata, warnings, rows, renderOpts, opts, dataset)
+}
+
+func serveRenderedWebOutput(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows []derive.Row, renderOpts render.Options, opts cliOptions, dataset webui.Dataset) error {
+	server, err := newWebServer(dataset)
 	if err != nil {
 		return err
 	}
@@ -223,10 +241,11 @@ func runWebOutput(w io.Writer, input captureInput, warnings []model.Warning, ren
 	if opts.TUI {
 		renderOpts.WebLinks.TUIURL = links.TUIURL
 	}
-	if err := render.Render(w, input.metadata, warnings, rows, renderOpts); err != nil {
+	if err := render.Render(w, metadata, warnings, rows, renderOpts); err != nil {
 		_ = server.Close()
 		return err
 	}
+	fmt.Fprintln(w, "HTTP server is running. Press Ctrl+C to stop.")
 	return server.Serve()
 }
 

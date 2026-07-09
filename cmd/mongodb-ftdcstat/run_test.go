@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"mongodb-ftdcstat/internal/ftdc"
 	"mongodb-ftdcstat/internal/model"
 	"mongodb-ftdcstat/internal/render"
+	"mongodb-ftdcstat/internal/webui"
 )
 
 func TestTableOutputStreamingMatchesBatchRender(t *testing.T) {
@@ -230,4 +232,144 @@ func deriveRows(files []discovery.MetricFile, view string, verbose, pressure boo
 		return nil, model.Metadata{}, err
 	}
 	return rows, metadata, nil
+}
+
+type fakeWebServer struct {
+	address   string
+	listenArg string
+	served    bool
+	closed    bool
+	serveErr  error
+}
+
+func (s *fakeWebServer) Listen(listen string) (string, error) {
+	s.listenArg = listen
+	return s.address, nil
+}
+
+func (s *fakeWebServer) Serve() error {
+	s.served = true
+	return s.serveErr
+}
+
+func (s *fakeWebServer) Close() error {
+	s.closed = true
+	return nil
+}
+
+func TestServeRenderedWebOutputPrintsEnabledLinksAndKeepAliveMessage(t *testing.T) {
+	metadata := model.NewMetadata()
+	rows := []derive.Row{{
+		Time: time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC),
+		Values: map[string]any{
+			"activeConn": 11.0,
+		},
+	}}
+	renderOpts := render.Options{
+		View:         "network",
+		TimeLocation: time.UTC,
+		MetricsRange: render.MetricsRangeFromRows(rows),
+	}
+	dataset := webui.BuildDataset(metadata, nil, rows, renderOpts, webui.Options{
+		View:         "network",
+		TimeLocation: time.UTC,
+	})
+
+	for _, tc := range []struct {
+		name       string
+		opts       cliOptions
+		want       []string
+		forbid     []string
+		listenAddr string
+	}{
+		{
+			name:       "web only",
+			opts:       cliOptions{Web: true, Listen: "127.0.0.1:8080"},
+			listenAddr: "http://127.0.0.1:8080",
+			want: []string{
+				"webUI\n  url: http://127.0.0.1:8080/\n",
+				"HTTP server is running. Press Ctrl+C to stop.\n",
+			},
+			forbid: []string{"\nwebTUI\n"},
+		},
+		{
+			name:       "tui only",
+			opts:       cliOptions{TUI: true, Listen: "127.0.0.1:9090"},
+			listenAddr: "http://127.0.0.1:9090",
+			want: []string{
+				"webTUI\n  url: http://127.0.0.1:9090/tui\n",
+				"HTTP server is running. Press Ctrl+C to stop.\n",
+			},
+			forbid: []string{"\nwebUI\n"},
+		},
+		{
+			name:       "web and tui",
+			opts:       cliOptions{Web: true, TUI: true, Listen: ":7777"},
+			listenAddr: "http://0.0.0.0:7777",
+			want: []string{
+				"webUI\n  url: http://127.0.0.1:7777/\n",
+				"webTUI\n  url: http://127.0.0.1:7777/tui\n",
+				"HTTP server is running. Press Ctrl+C to stop.\n",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeWebServer{address: tc.listenAddr}
+			oldFactory := newWebServer
+			newWebServer = func(dataset webui.Dataset) (webServer, error) {
+				return fake, nil
+			}
+			defer func() { newWebServer = oldFactory }()
+
+			var buf bytes.Buffer
+			if err := serveRenderedWebOutput(&buf, metadata, nil, rows, renderOpts, tc.opts, dataset); err != nil {
+				t.Fatal(err)
+			}
+			if !fake.served {
+				t.Fatal("expected server.Serve to be called")
+			}
+			if fake.listenArg != tc.opts.Listen {
+				t.Fatalf("listen arg=%q want=%q", fake.listenArg, tc.opts.Listen)
+			}
+			out := buf.String()
+			for _, want := range tc.want {
+				if !strings.Contains(out, want) {
+					t.Fatalf("missing %q in output:\n%s", want, out)
+				}
+			}
+			for _, forbid := range tc.forbid {
+				if strings.Contains(out, forbid) {
+					t.Fatalf("unexpected %q in output:\n%s", forbid, out)
+				}
+			}
+		})
+	}
+}
+
+func TestServeRenderedWebOutputPropagatesServeError(t *testing.T) {
+	fake := &fakeWebServer{address: "http://127.0.0.1:8080", serveErr: fmt.Errorf("serve failed")}
+	oldFactory := newWebServer
+	newWebServer = func(dataset webui.Dataset) (webServer, error) {
+		return fake, nil
+	}
+	defer func() { newWebServer = oldFactory }()
+
+	metadata := model.NewMetadata()
+	rows := []derive.Row{{
+		Time: time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC),
+		Values: map[string]any{
+			"activeConn": 11.0,
+		},
+	}}
+	renderOpts := render.Options{View: "network", TimeLocation: time.UTC, MetricsRange: render.MetricsRangeFromRows(rows)}
+	dataset := webui.BuildDataset(metadata, nil, rows, renderOpts, webui.Options{View: "network", TimeLocation: time.UTC})
+
+	var buf bytes.Buffer
+	err := serveRenderedWebOutput(&buf, metadata, nil, rows, renderOpts, cliOptions{Web: true}, dataset)
+	if err == nil || err.Error() != "serve failed" {
+		t.Fatalf("err=%v", err)
+	}
+	if !fake.served {
+		t.Fatal("expected server.Serve to be called")
+	}
 }

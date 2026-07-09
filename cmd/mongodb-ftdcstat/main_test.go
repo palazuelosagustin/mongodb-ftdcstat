@@ -304,6 +304,7 @@ func TestBuildWebLinks(t *testing.T) {
 		{name: "all interfaces", address: "0.0.0.0:8080", wantWeb: "http://127.0.0.1:8080/", wantTUI: "http://127.0.0.1:8080/tui"},
 		{name: "explicit localhost", address: "127.0.0.1:9090", wantWeb: "http://127.0.0.1:9090/", wantTUI: "http://127.0.0.1:9090/tui"},
 		{name: "http address", address: "http://127.0.0.1:7777", wantWeb: "http://127.0.0.1:7777/", wantTUI: "http://127.0.0.1:7777/tui"},
+		{name: "http all interfaces", address: "http://0.0.0.0:7777", wantWeb: "http://127.0.0.1:7777/", wantTUI: "http://127.0.0.1:7777/tui"},
 	} {
 		got := buildWebLinks(tc.address)
 		if got.WebURL != tc.wantWeb || got.TUIURL != tc.wantTUI {
