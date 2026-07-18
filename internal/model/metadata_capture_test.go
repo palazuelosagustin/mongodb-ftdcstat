@@ -74,6 +74,82 @@ func TestReplSnapshotCapturedWithoutStatusHistory(t *testing.T) {
 	}
 }
 
+func TestServerStatusReplMembersFillSnapshot(t *testing.T) {
+	m := NewMetadata()
+	m.AddDocument(time.Unix(0, 0), "chunk", map[string]any{
+		"serverStatus": map[string]any{
+			"process": "mongod",
+			"repl": map[string]any{
+				"setName":  "shard01",
+				"hosts":    []any{"h1:27017", "h2:27017"},
+				"passives": []any{"h3:27017"},
+				"arbiters": []any{"h4:27017"},
+			},
+		},
+	})
+	set, members := m.ReplSetSnapshot()
+	if set != "shard01" {
+		t.Fatalf("set=%q", set)
+	}
+	want := []ReplMemberState{
+		{Label: "node1", Name: "h1:27017"},
+		{Label: "node2", Name: "h2:27017"},
+		{Label: "node3", Name: "h3:27017"},
+		{Label: "node4", Name: "h4:27017"},
+	}
+	if len(members) != len(want) {
+		t.Fatalf("members=%#v", members)
+	}
+	for i := range want {
+		if members[i] != want[i] {
+			t.Fatalf("members[%d]=%#v want %#v", i, members[i], want[i])
+		}
+	}
+}
+
+func TestReplConfigOverridesServerStatusReplMembers(t *testing.T) {
+	m := NewMetadata()
+	m.AddDocument(time.Unix(0, 0), "serverStatus", map[string]any{
+		"serverStatus": map[string]any{
+			"repl": map[string]any{
+				"setName": "rs0",
+				"hosts":   []any{"fallback2:27017", "fallback1:27017"},
+			},
+		},
+	})
+	m.AddDocument(time.Unix(1, 0), "config", map[string]any{
+		"replSetGetConfig": map[string]any{
+			"config": map[string]any{
+				"_id": "rs0",
+				"members": []any{
+					map[string]any{"host": "config1:27017"},
+					map[string]any{"host": "config2:27017"},
+				},
+			},
+		},
+	})
+	m.AddDocument(time.Unix(2, 0), "new-status", map[string]any{
+		"serverStatus": map[string]any{
+			"repl": map[string]any{
+				"hosts": []any{"extra:27017"},
+			},
+		},
+	})
+	_, members := m.ReplSetSnapshot()
+	want := []ReplMemberState{
+		{Label: "node1", Name: "config1:27017"},
+		{Label: "node2", Name: "config2:27017"},
+	}
+	if len(members) != len(want) {
+		t.Fatalf("members=%#v", members)
+	}
+	for i := range want {
+		if members[i] != want[i] {
+			t.Fatalf("members[%d]=%#v want %#v", i, members[i], want[i])
+		}
+	}
+}
+
 func TestSummaryUsesCompactServerStatus(t *testing.T) {
 	m := NewMetadata()
 	m.AddDocument(time.Unix(0, 0), "chunk", map[string]any{

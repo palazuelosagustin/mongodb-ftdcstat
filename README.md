@@ -395,8 +395,12 @@ rsInfo
 ```
 
 Member order prefers `replSetGetConfig` order when available. Otherwise it uses
-first-seen order from `replSetGetStatus.members`. If a new member appears later,
-it gets the next label, such as `node4`; earlier rows show `-` for that member.
+first-seen order from `replSetGetStatus.members` or from `serverStatus.repl.hosts`,
+`serverStatus.repl.passives`, and `serverStatus.repl.arbiters`. The
+`serverStatus.repl` fallback keeps shard data-node reports aligned with regular
+replica-set node reports when FTDC does not include full replica-set config
+metadata. If a new member appears later, it gets the next label, such as
+`node4`; earlier rows show `-` for that member.
 
 `getCmdLineOpts` prints the parsed startup config, flattened into `key=value`
 lines. It does not print raw `argv`, so config-file-driven launches do not show

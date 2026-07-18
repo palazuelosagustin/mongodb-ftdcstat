@@ -311,6 +311,31 @@ func TestRSInfoFallbackUsesReplSetGetStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestSummaryHeaderUsesServerStatusReplHosts(t *testing.T) {
+	m := model.NewMetadata()
+	m.AddDocument(time.Date(2026, 6, 4, 19, 0, 0, 0, time.UTC), "test", map[string]any{
+		"buildInfo": map[string]any{"version": "8.0.0"},
+		"serverStatus": map[string]any{
+			"process": "mongod",
+			"repl": map[string]any{
+				"setName": "shard01",
+				"hosts":   []any{"h1:27017", "h2:27017", "h3:27017"},
+			},
+		},
+	})
+	var buf bytes.Buffer
+	if err := Render(&buf, m, nil, []derive.Row{testRow(0)}, Options{View: "summary"}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"| Member count | 3", "| Node 1       | h1:27017", "lagS node1 node2 node3 majLagS rsState"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing serverStatus repl host content %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestProcessMarkerBeforeFirstMetricLineAndRestartMarker(t *testing.T) {
 	rows := []derive.Row{
 		testRow(0),

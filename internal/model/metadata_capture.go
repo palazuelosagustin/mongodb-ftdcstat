@@ -54,6 +54,15 @@ func (m *Metadata) captureServerStatus(record MetadataRecord) {
 	if set := lookupMetadataString(record.Doc, "repl.setName"); set != "" && m.replSetName == "" {
 		m.replSetName = set
 	}
+	m.captureServerStatusReplMembers(record)
+}
+
+func (m *Metadata) captureServerStatusReplMembers(record MetadataRecord) {
+	for _, path := range []string{"repl.hosts", "repl.passives", "repl.arbiters"} {
+		for _, name := range metadataStringList(record.Doc, path) {
+			m.addReplMemberName(name, false)
+		}
+	}
 }
 
 func (m *Metadata) captureReplSetGetStatus(record MetadataRecord) {
@@ -80,23 +89,20 @@ func (m *Metadata) addReplMemberName(name string, fromConfig bool) {
 	if name == "" {
 		return
 	}
+	if fromConfig && !m.replMembersFromConfig {
+		m.replMembers = nil
+		m.replMemberByName = nil
+		m.replNextLabel = 1
+		m.replMembersFromConfig = true
+	}
+	if !fromConfig && m.replMembersFromConfig {
+		return
+	}
 	if m.replMemberByName == nil {
 		m.replMemberByName = map[string]string{}
 	}
-	if label, ok := m.replMemberByName[name]; ok {
-		if fromConfig {
-			return
-		}
-		_ = label
+	if _, ok := m.replMemberByName[name]; ok {
 		return
-	}
-	if !fromConfig && len(m.replMembers) > 0 {
-		// Status-only names should not override config-derived members.
-		for _, member := range m.replMembers {
-			if member.Name == name {
-				return
-			}
-		}
 	}
 	label := fmt.Sprintf("node%d", m.replNextLabel)
 	m.replNextLabel++
@@ -174,6 +180,25 @@ func replStatusMemberNames(status map[string]any) []string {
 		}
 		if name := lookupMetadataString(member, "name"); name != "" {
 			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func metadataStringList(doc map[string]any, path string) []string {
+	value, ok := Lookup(doc, path)
+	if !ok {
+		return nil
+	}
+	list, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		text, ok := AsString(item)
+		if ok && text != "" && text != "-" {
+			out = append(out, text)
 		}
 	}
 	return out

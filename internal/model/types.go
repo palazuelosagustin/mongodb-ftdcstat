@@ -95,19 +95,20 @@ type MetadataRecord struct {
 }
 
 type Metadata struct {
-	Latest              map[string]MetadataRecord   `json:"latest,omitempty"`
-	History             map[string][]MetadataRecord `json:"-"`
-	Warnings            []Warning                   `json:"warnings,omitempty"`
-	processKind         string
-	networkMaxConn      string
-	networkMaxConnTime  time.Time
-	haveNetworkMaxConn  bool
-	storageEngineName   string
-	storageEngineTime   time.Time
-	replSetName         string
-	replMembers         []ReplMemberState
-	replMemberByName    map[string]string
-	replNextLabel       int
+	Latest                map[string]MetadataRecord   `json:"latest,omitempty"`
+	History               map[string][]MetadataRecord `json:"-"`
+	Warnings              []Warning                   `json:"warnings,omitempty"`
+	processKind           string
+	networkMaxConn        string
+	networkMaxConnTime    time.Time
+	haveNetworkMaxConn    bool
+	storageEngineName     string
+	storageEngineTime     time.Time
+	replSetName           string
+	replMembers           []ReplMemberState
+	replMemberByName      map[string]string
+	replMembersFromConfig bool
+	replNextLabel         int
 }
 
 const (
