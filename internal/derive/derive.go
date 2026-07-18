@@ -94,11 +94,11 @@ func (s *Streamer) Add(cur model.MetricSample) (Row, bool) {
 		row.Marker = fmt.Sprintf("gap %.0fs: rate baseline reset", cur.Time.Sub(prev.Time).Seconds())
 	}
 	if !s.printedProcess {
-		row.ProcessMarker = processMarker("process", cur, s.opts.TimeLocation)
+		row.ProcessMarker = processMarker("process", cur, s.opts.TimeLocation, s.opts.Metadata.ProcessKind())
 		s.printedProcess = row.ProcessMarker != ""
 	}
 	if restarted {
-		row.ProcessMarker = processMarker("restart detected", cur, s.opts.TimeLocation)
+		row.ProcessMarker = processMarker("restart detected", cur, s.opts.TimeLocation, s.opts.Metadata.ProcessKind())
 	}
 	reset := row.Marker != "" || restarted
 	if s.opts.Metadata.ProcessKind() == model.ProcessKindMongos {
@@ -600,7 +600,7 @@ func processRestart(prev, cur model.MetricSample) bool {
 	return false
 }
 
-func processMarker(event string, sample model.MetricSample, loc *time.Location) string {
+func processMarker(event string, sample model.MetricSample, loc *time.Location, processKind string) string {
 	pid := "-"
 	if v, ok := sample.Get("serverStatus.pid"); ok {
 		pid = strconv.FormatInt(int64(v), 10)
@@ -609,9 +609,9 @@ func processMarker(event string, sample model.MetricSample, loc *time.Location) 
 	if pid == "-" && start == "-" {
 		return ""
 	}
-	process := "mongod"
-	if kind := sampleKind(sample); kind != "" {
-		process = kind
+	process := model.ProcessKindMongod
+	if processKind == model.ProcessKindMongos {
+		process = model.ProcessKindMongos
 	}
 	return fmt.Sprintf("--- %s %s: pid=%s start=%s ---", process, event, pid, start)
 }
@@ -627,15 +627,6 @@ func processStart(sample model.MetricSample, loc *time.Location) string {
 		return sample.Time.Add(-time.Duration(v) * time.Second).In(loc).Format(time.RFC3339)
 	}
 	return "-"
-}
-
-func sampleKind(sample model.MetricSample) string {
-	for path := range sample.Values {
-		if strings.HasPrefix(path, "router.") {
-			return model.ProcessKindMongos
-		}
-	}
-	return ""
 }
 
 func rsState(sample model.MetricSample) string {

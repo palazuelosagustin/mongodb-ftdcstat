@@ -866,9 +866,7 @@ func readSignedVarint(reader *bytes.Reader) (int64, error) {
 }
 
 func canonicalMetricPath(path, processKind string) string {
-	if processKind != model.ProcessKindMongos {
-		return path
-	}
+	_ = processKind
 	switch {
 	case path == "common.start":
 		return "start"

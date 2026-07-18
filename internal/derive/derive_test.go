@@ -2,6 +2,7 @@ package derive
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,16 @@ func testSample(ts int64, sourceIndex int, values map[string]float64) model.Metr
 		SourceIndex: sourceIndex,
 		Values:      values,
 	}
+}
+
+func testMetadataWithProcess(process string) model.Metadata {
+	m := model.NewMetadata()
+	if process != "" {
+		m.AddDocument(time.Unix(0, 0), "metadata", map[string]any{
+			"serverStatus": map[string]any{"process": process},
+		})
+	}
+	return m
 }
 
 func TestMergeSamplesSortsAndDeduplicates(t *testing.T) {
@@ -156,6 +167,55 @@ func TestRowsSetsProcessMarkerBeforeFirstMetricLine(t *testing.T) {
 	}
 	if rows[0].ProcessMarker == "" {
 		t.Fatal("expected process marker on first rendered row")
+	}
+}
+
+func TestRowsProcessMarkerUsesMongodMetadataDespiteRouterMetrics(t *testing.T) {
+	rows := Rows([]model.MetricSample{
+		testSample(0, 0, map[string]float64{
+			"serverStatus.pid":    10,
+			"serverStatus.uptime": 10,
+			"router.connPoolStats.replicaSetPingTimesMillis.rs0.host1": 2,
+		}),
+		testSample(10, 0, map[string]float64{
+			"serverStatus.pid":    10,
+			"serverStatus.uptime": 20,
+			"router.connPoolStats.replicaSetPingTimesMillis.rs0.host1": 2,
+		}),
+	}, Options{IntervalSeconds: 1, Metadata: testMetadataWithProcess(model.ProcessKindMongod)})
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	if !strings.Contains(rows[0].ProcessMarker, "--- mongod process:") {
+		t.Fatalf("process marker=%q", rows[0].ProcessMarker)
+	}
+	if _, ok := rows[0].Values["shards"]; ok {
+		t.Fatalf("router metric rendered for mongod metadata: %#v", rows[0].Values)
+	}
+}
+
+func TestRowsProcessMarkerUsesMongosMetadata(t *testing.T) {
+	rows := Rows([]model.MetricSample{
+		testSample(0, 0, map[string]float64{
+			"serverStatus.pid":    20,
+			"serverStatus.uptime": 10,
+			"router.connPoolStats.replicaSetPingTimesMillis.rs0.host1": 2,
+		}),
+		testSample(10, 0, map[string]float64{
+			"serverStatus.pid":    20,
+			"serverStatus.uptime": 20,
+			"router.connPoolStats.replicaSetPingTimesMillis.rs0.host1": 2,
+			"router.connPoolStats.replicaSetPingTimesMillis.rs0.host2": 4,
+		}),
+	}, Options{IntervalSeconds: 1, Metadata: testMetadataWithProcess(model.ProcessKindMongos)})
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	if !strings.Contains(rows[0].ProcessMarker, "--- mongos process:") {
+		t.Fatalf("process marker=%q", rows[0].ProcessMarker)
+	}
+	if got := rows[0].Values["shards"]; got != float64(2) {
+		t.Fatalf("shards=%v", got)
 	}
 }
 

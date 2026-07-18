@@ -107,6 +107,36 @@ func testMetadata() model.Metadata {
 	return m
 }
 
+func testMetadataWithProcess(process string) model.Metadata {
+	m := testMetadata()
+	m.AddDocument(time.Date(2026, 6, 4, 19, 1, 0, 0, time.UTC), "process", map[string]any{
+		"serverStatus": map[string]any{"process": process},
+	})
+	return m
+}
+
+func TestSummaryLayoutFollowsServerStatusProcess(t *testing.T) {
+	row := testRow(0)
+
+	var mongod bytes.Buffer
+	if err := Render(&mongod, testMetadataWithProcess(model.ProcessKindMongod), nil, []derive.Row{row}, Options{View: "summary"}); err != nil {
+		t.Fatal(err)
+	}
+	mongodOut := mongod.String()
+	if !strings.Contains(mongodOut, "|           replication") || !strings.Contains(mongodOut, "|                               wiredTiger") {
+		t.Fatalf("mongod summary missing mongod metric sections:\n%s", mongodOut)
+	}
+
+	var mongos bytes.Buffer
+	if err := Render(&mongos, testMetadataWithProcess(model.ProcessKindMongos), nil, []derive.Row{row}, Options{View: "summary"}); err != nil {
+		t.Fatal(err)
+	}
+	mongosOut := mongos.String()
+	if !strings.Contains(mongosOut, "|                     router") || !strings.Contains(mongosOut, "|                                    connPool") {
+		t.Fatalf("mongos summary missing mongos metric sections:\n%s", mongosOut)
+	}
+}
+
 func TestCLIHeaderRendersTableSectionsAndOmitsLegacyFields(t *testing.T) {
 	var buf bytes.Buffer
 	err := Render(&buf, testMetadata(), nil, []derive.Row{testRow(0)}, Options{View: "server"})

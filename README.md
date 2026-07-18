@@ -20,6 +20,8 @@ The input is a directory, not a single FTDC file. The tool discovers
 `metrics.*`, `metrics.interim`, `interim*`, and exported JSON files, then treats
 them as one chronological capture.
 
+Process type detection comes from FTDC `serverStatus.process`. When it is `mongod`, the tool renders the existing mongod report layout. When it is `mongos`, the tool renders the router-specific mongos layout. Top-level `router` metrics alone do not classify a capture as mongos, because shard data nodes can include router-related metrics. If `serverStatus.process` is missing, output falls back to the mongod-style report.
+
 ## Options
 
 ### `<path-to-diagnostic-data-directory>`
@@ -408,6 +410,8 @@ printed immediately before the first metric row and after restarts:
 --- mongod process: pid=40955 start=2026-06-07T00:40:13-03:00 ---
 --- mongod restart detected: pid=41234 start=2026-06-07T04:12:09-03:00 ---
 ```
+
+The process name in these markers follows the same `serverStatus.process` detection used for report layout.
 
 Rate baselines are reset after a detected restart.
 

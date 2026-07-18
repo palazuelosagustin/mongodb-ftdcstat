@@ -253,6 +253,26 @@ func TestStreamFilesMatchesReadFiles(t *testing.T) {
 	}
 }
 
+func TestCanonicalMetricPathUnwrapsCommonForAllProcessKinds(t *testing.T) {
+	for _, processKind := range []string{model.ProcessKindUnknown, model.ProcessKindMongod, model.ProcessKindMongos} {
+		t.Run(processKind, func(t *testing.T) {
+			cases := map[string]string{
+				"common.start": "start",
+				"common.end":   "end",
+				"common.serverStatus.connections.current":     "serverStatus.connections.current",
+				"common.systemMetrics.cpu.user_ms":            "systemMetrics.cpu.user_ms",
+				"common.transportLayerStats.ingress.sessions": "transportLayerStats.ingress.sessions",
+				"router.connPoolStats.totalInUse":             "router.connPoolStats.totalInUse",
+			}
+			for path, want := range cases {
+				if got := canonicalMetricPath(path, processKind); got != want {
+					t.Fatalf("canonicalMetricPath(%q, %q)=%q want %q", path, processKind, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestMongosDiagnosticDataCanonicalizesCommonMetrics(t *testing.T) {
 	root := filepath.Join("..", "..", "testdata", "mongos.diagnostic.data")
 	if _, err := os.Stat(root); err != nil {

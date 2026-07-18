@@ -214,21 +214,13 @@ func (m *Metadata) normalizeRootDocument(root map[string]any) map[string]any {
 		}
 		root = normalized
 	}
-	if _, ok := root["router"]; ok {
-		m.setProcessKind(ProcessKindMongos)
-	}
-	if _, ok := root["serverStatus"]; ok && m.processKind == ProcessKindUnknown {
-		m.setProcessKind(ProcessKindMongod)
-	}
 	return root
 }
 
 func (m *Metadata) setProcessKind(kind string) {
 	switch kind {
 	case ProcessKindMongod:
-		if m.processKind == ProcessKindUnknown {
-			m.processKind = ProcessKindMongod
-		}
+		m.processKind = ProcessKindMongod
 	case ProcessKindMongos:
 		m.processKind = ProcessKindMongos
 	}

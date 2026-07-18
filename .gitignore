@@ -9,3 +9,8 @@ replSetGetStatus
 outputs/
 testdata/
 mongodb-ftdcstat
+diagnostic.data.shard/
+mongos.diagnostic.data/
+rsnode_report
+shard_report
+router_report

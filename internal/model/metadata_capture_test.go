@@ -92,6 +92,62 @@ func TestSummaryUsesCompactServerStatus(t *testing.T) {
 	}
 }
 
+func TestProcessKindComesOnlyFromServerStatusProcess(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  map[string]any
+		want string
+	}{
+		{
+			name: "router only stays unknown",
+			doc: map[string]any{
+				"router": map[string]any{
+					"connPoolStats": map[string]any{"totalInUse": 3},
+				},
+			},
+			want: ProcessKindUnknown,
+		},
+		{
+			name: "serverStatus without process stays unknown",
+			doc: map[string]any{
+				"serverStatus": map[string]any{
+					"storageEngine": map[string]any{"name": "wiredTiger"},
+				},
+				"router": map[string]any{
+					"connPoolStats": map[string]any{"totalInUse": 3},
+				},
+			},
+			want: ProcessKindUnknown,
+		},
+		{
+			name: "mongod process wins over router metrics",
+			doc: map[string]any{
+				"serverStatus": map[string]any{"process": "mongod"},
+				"router": map[string]any{
+					"connPoolStats": map[string]any{"totalInUse": 3},
+				},
+			},
+			want: ProcessKindMongod,
+		},
+		{
+			name: "mongos process selects mongos",
+			doc: map[string]any{
+				"serverStatus": map[string]any{"process": "mongos"},
+			},
+			want: ProcessKindMongos,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewMetadata()
+			m.AddDocument(time.Unix(0, 0), "chunk", tt.doc)
+			if got := m.ProcessKind(); got != tt.want {
+				t.Fatalf("processKind=%q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCommonRootDetectsMongosAndUnwrapsServerStatus(t *testing.T) {
 	m := NewMetadata()
 	m.AddDocument(time.Unix(0, 0), "chunk", map[string]any{
