@@ -189,7 +189,7 @@ func TestRowsProcessMarkerUsesMongodMetadataDespiteRouterMetrics(t *testing.T) {
 	if !strings.Contains(rows[0].ProcessMarker, "--- mongod process:") {
 		t.Fatalf("process marker=%q", rows[0].ProcessMarker)
 	}
-	if _, ok := rows[0].Values["shards"]; ok {
+	if _, ok := rows[0].Values["nodes"]; ok {
 		t.Fatalf("router metric rendered for mongod metadata: %#v", rows[0].Values)
 	}
 }
@@ -214,8 +214,8 @@ func TestRowsProcessMarkerUsesMongosMetadata(t *testing.T) {
 	if !strings.Contains(rows[0].ProcessMarker, "--- mongos process:") {
 		t.Fatalf("process marker=%q", rows[0].ProcessMarker)
 	}
-	if got := rows[0].Values["shards"]; got != float64(2) {
-		t.Fatalf("shards=%v", got)
+	if got := rows[0].Values["nodes"]; got != float64(2) {
+		t.Fatalf("nodes=%v", got)
 	}
 }
 

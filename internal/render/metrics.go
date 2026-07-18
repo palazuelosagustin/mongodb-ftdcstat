@@ -28,7 +28,7 @@ var metricRegistry = []metricDefinition{
 	{Section: "replication", Column: "applyBufCnt", Format: "integer", JSONName: "applyBufCnt"},
 	{Section: "replication", Column: "applyBufMB", Format: "mib", JSONName: "applyBufMB"},
 
-	{Section: "router", Column: "shards", Format: "integer", JSONName: "shards"},
+	{Section: "router", Column: "nodes", Format: "integer", JSONName: "nodes"},
 	{Section: "router", Column: "pingMS", Format: "millis", JSONName: "pingMS"},
 	{Section: "router", Column: "helloOps/s", Format: "rate", JSONName: "helloOps/s"},
 	{Section: "router", Column: "helloMS", Format: "millis", JSONName: "helloMS"},
@@ -132,7 +132,7 @@ func connPoolColumns(verbose bool) []string {
 }
 
 func routerColumns() []string {
-	return []string{"shards", "pingMS", "helloOps/s", "helloMS", "ghaOps/s", "ghaMS"}
+	return []string{"nodes", "pingMS", "helloOps/s", "helloMS", "ghaOps/s", "ghaMS"}
 }
 
 func systemColumns(verbose bool) []string {

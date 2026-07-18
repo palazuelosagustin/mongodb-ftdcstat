@@ -532,7 +532,7 @@ func fillReplication(row *Row, c calculator, members *replMemberRegistry, reset 
 func fillMongosRouter(row *Row, c calculator, reset bool) {
 	pingCount, pingAvg := mongosPingSummary(c.cur)
 	if pingCount > 0 {
-		row.Values["shards"] = float64(pingCount)
+		row.Values["nodes"] = float64(pingCount)
 		row.Values["pingMS"] = pingAvg
 	}
 	setCurrent(row, "clientConn", c, "router.connPoolStats.numClientConnections")

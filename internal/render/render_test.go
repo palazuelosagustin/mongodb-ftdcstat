@@ -135,6 +135,9 @@ func TestSummaryLayoutFollowsServerStatusProcess(t *testing.T) {
 	if !strings.Contains(mongosOut, "|                     router") || !strings.Contains(mongosOut, "|                                    connPool") {
 		t.Fatalf("mongos summary missing mongos metric sections:\n%s", mongosOut)
 	}
+	if !strings.Contains(mongosOut, "nodes pingMS helloOps/s") || strings.Contains(mongosOut, "shards pingMS") {
+		t.Fatalf("mongos router header should use nodes instead of shards:\n%s", mongosOut)
+	}
 }
 
 func TestCLIHeaderRendersTableSectionsAndOmitsLegacyFields(t *testing.T) {
