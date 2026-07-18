@@ -190,6 +190,7 @@ Report
 | View           | summary                  |
 | From           | 2026-06-04T19:00:00Z     |
 | To             | 2026-06-04T20:00:00Z     |
+| Process        | mongod                   |
 +----------------+--------------------------+
 
 ...
@@ -406,9 +407,11 @@ metadata. If a new member appears later, it gets the next label, such as
 lines. It does not print raw `argv`, so config-file-driven launches do not show
 the executable path or `-f /path/to/mongod.conf` wrapper arguments there.
 
-Process information is not printed in the static header because `pid`, uptime,
-and process start can change over a capture. Instead, process markers are
-printed immediately before the first metric row and after restarts:
+The `Report` table prints the process kind detected from `serverStatus.process`
+(`mongod` or `mongos`). If it is missing, output falls back to the mongod-style
+report and the header prints `mongod`. PID, uptime, and process start can change
+over a capture, so those details are printed immediately before the first metric
+row and after restarts:
 
 ```text
 --- mongod process: pid=40955 start=2026-06-07T00:40:13-03:00 ---

@@ -14,3 +14,4 @@ mongos.diagnostic.data/
 rsnode_report
 shard_report
 router_report
+run_reports

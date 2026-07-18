@@ -212,6 +212,32 @@ func TestCLIHeaderUsesReportTableForMetricsRange(t *testing.T) {
 	}
 }
 
+func TestCLIHeaderIncludesProcessKind(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata model.Metadata
+		want     string
+	}{
+		{name: "mongod", metadata: testMetadataWithProcess(model.ProcessKindMongod), want: "| Process | mongod |"},
+		{name: "mongos", metadata: testMetadataWithProcess(model.ProcessKindMongos), want: "| Process | mongos |"},
+		{name: "missing process falls back to mongod", metadata: testMetadata(), want: "| Process | mongod |"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := Render(&buf, tt.metadata, nil, []derive.Row{testRow(0)}, Options{View: "summary"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := strings.Join(strings.Fields(buf.String()), " ")
+			if !strings.Contains(out, tt.want) {
+				t.Fatalf("missing process row %q:\n%s", tt.want, buf.String())
+			}
+		})
+	}
+}
+
 func TestCLIHeaderSkipsEmptyMetricRangeRowsWhenNoRows(t *testing.T) {
 	var buf bytes.Buffer
 	err := Render(&buf, testMetadata(), nil, nil, Options{View: "server"})

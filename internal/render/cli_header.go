@@ -96,12 +96,19 @@ func buildReportHeader(opts Options) HeaderTable {
 }
 
 func injectReportTimes(table *HeaderTable, opts Options, loc *time.Location, metadata model.Metadata) {
-	_ = metadata
-	rows := make([]HeaderRow, 0, len(table.Rows)+2)
+	rows := make([]HeaderRow, 0, len(table.Rows)+3)
 	rows = append(rows, table.Rows...)
 	appendHeaderRow(&rows, "From", formatHeaderTime(opts.MetricsRange.Start, loc))
 	appendHeaderRow(&rows, "To", formatHeaderTime(opts.MetricsRange.End, loc))
+	appendHeaderRow(&rows, "Process", reportProcessKind(metadata))
 	table.Rows = rows
+}
+
+func reportProcessKind(metadata model.Metadata) string {
+	if metadata.ProcessKind() == model.ProcessKindMongos {
+		return model.ProcessKindMongos
+	}
+	return model.ProcessKindMongod
 }
 
 func buildHostHeader(metadata model.Metadata, host map[string]any) HeaderTable {
