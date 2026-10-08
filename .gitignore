@@ -1,4 +1,3 @@
-ftdcstat
 diagnostic.data/
 diagnostic.data.tar.gz
 all.out
@@ -8,7 +7,7 @@ serverStatus.out
 replSetGetStatus
 outputs/
 testdata/
-mongodb-ftdcstat
+/mongodb-ftdcstat
 diagnostic.data.shard/
 mongos.diagnostic.data/
 rsnode_report
