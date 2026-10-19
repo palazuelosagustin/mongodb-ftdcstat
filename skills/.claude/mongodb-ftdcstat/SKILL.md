@@ -44,10 +44,12 @@ merged as one chronological capture.
 - `--avg` averages rows into fixed buckets, `1m`–`15m` only, and cannot be combined with an explicit `--interval`. Row `datetime` is then the bucket start.
 - `--from` is inclusive, `--to` is exclusive. Timestamps without a zone are UTC.
 - `--json` cannot be combined with `--web` or `--tui`.
-- `--verbose` expands only `repl`, `wt`, `system`, `network`. It does nothing for `summary` or `io`.
+- `--listen` is only valid with `--web` or `--tui`.
+- Every flag also accepts the `--flag=value` form.
+- `--verbose` is only valid with `repl`, `wt`, `system`, `network`; it is rejected for `summary`, `server`, and `io`.
 - `--pressure` (Linux PSI columns) is only valid with `--view system`.
 - `--device` limits disk metrics to one device. `--view io` shows every device side by side.
-- `--web` serves charts and still prints the terminal table. `--tui` serves a scrollable browser table and suppresses the terminal table. Both bind `127.0.0.1` on a random port unless `--listen` is given, and block until Ctrl+C. Run them in the background and give the user the printed URL.
+- `--web` serves charts and still prints the terminal table. `--tui` serves a scrollable browser table and suppresses the terminal table. Both bind `127.0.0.1` on a random port unless `--listen` is given, and block until Ctrl+C. Run them in the background and give the user the printed URL (`webUI` header section).
 
 ## Picking a command
 
@@ -94,6 +96,10 @@ Full column definitions, source FTDC paths, and formulas are in
 [references/columns.md](references/columns.md). Read it when you need to
 explain a specific column or verify a formula.
 
+For `--json` structure, `jq` recipes, and the `--web`/`--tui` HTTP endpoints
+(`/api/metadata`, `/api/data`, `/api/table`), read
+[references/json-api.md](references/json-api.md).
+
 ## Diagnostic patterns
 
 - **Replication bottleneck:** sustained `nodeN`/`majLagS` lag, `rsState` changes, high `hbMs`, growing `applyBufCnt`/`applyBufMB`. Check `system` on the lagging member's own capture.
@@ -125,6 +131,7 @@ Columns live in `internal/render/metrics.go` (registry and per-view column
 lists), derivations in `internal/derive/derive.go`, and FTDC path selection in
 `internal/derive/paths.go`. If you change a column, formula, flag, or JSON
 shape, update `README.md` (and `readme_test.go` enforces parts of it), this
-skill's `references/columns.md`, and the tests together. Validate with
+skill's `references/columns.md` (and `references/json-api.md` for JSON/API
+changes), and the tests together. Web routes live in `internal/webui/server.go`. Validate with
 `go test ./...` and the smoke test
 `./mongodb-ftdcstat diagnostic.data --view summary --interval 43200`.
