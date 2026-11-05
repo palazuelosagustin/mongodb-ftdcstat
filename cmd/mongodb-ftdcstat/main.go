@@ -174,12 +174,13 @@ func shouldStartHTTPServer(opts cliOptions) bool {
 }
 
 func runStreamingTableOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {
-	metricsRange, err := streamMetricsRange(input)
+	metricsRange, sampleCount, err := streamHeaderStats(input)
 	if err != nil {
 		return err
 	}
 	renderOpts.MetricsRange = metricsRange
 	renderOpts.AvgBucket = input.avgBucket
+	renderOpts.SampleCount = sampleCount
 	if err := render.RenderCLIHeader(w, input.metadata, renderOpts); err != nil {
 		return err
 	}
@@ -309,24 +310,33 @@ func collectRows(input captureInput) ([]derive.Row, render.MetricsRange, []model
 	return collector.snapshot(), metricsRange, streamWarnings, nil
 }
 
-func streamMetricsRange(input captureInput) (render.MetricsRange, error) {
+// streamHeaderStats pre-reads the capture to get what the CLI header needs
+// before any row is printed: the metrics range and the number of rendered
+// rows (bucket count with --avg), matching what the batch path reports.
+func streamHeaderStats(input captureInput) (render.MetricsRange, int, error) {
 	var out render.MetricsRange
+	count := 0
 	streamer := derive.NewStreamer(input.streamerOpts)
+	averager := aggregate.NewRowBucketAverager(input.avgBucket)
 	_, err := input.reader.StreamFiles(input.files, input.readerOpts, func(sample model.MetricSample) error {
 		row, ok := streamer.Add(sample)
-		if !ok || row.Time.IsZero() {
+		if !ok {
 			return nil
 		}
-		if out.Start.IsZero() {
-			out.Start = row.Time
+		if !row.Time.IsZero() {
+			if out.Start.IsZero() {
+				out.Start = row.Time
+			}
+			out.End = row.Time
 		}
-		out.End = row.Time
+		count += len(averager.Add(row))
 		return nil
 	})
 	if err != nil {
-		return render.MetricsRange{}, err
+		return render.MetricsRange{}, 0, err
 	}
-	return out, nil
+	count += len(averager.Flush())
+	return out, count, nil
 }
 
 type bufferedRowCollector struct {

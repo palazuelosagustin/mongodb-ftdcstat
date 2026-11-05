@@ -30,49 +30,74 @@ func TestTableOutputStreamingMatchesBatchRender(t *testing.T) {
 	if len(files) > 3 {
 		files = files[:3]
 	}
+	metadata, _, err := ftdc.NewNativeReader().ReadMetadataFiles(files)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	for _, view := range []string{"summary", "server", "wt", "system", "network", "repl"} {
-		t.Run(view, func(t *testing.T) {
-			rows, metadata, err := deriveRows(files, view, false, false)
+	cases := []struct {
+		view string
+		avg  time.Duration
+	}{
+		{view: "summary"}, {view: "server"}, {view: "wt"}, {view: "system"}, {view: "network"}, {view: "repl"},
+		{view: "summary", avg: 5 * time.Minute},
+	}
+	for _, tc := range cases {
+		name := tc.view
+		if tc.avg > 0 {
+			name += "-avg" + tc.avg.String()
+		}
+		t.Run(name, func(t *testing.T) {
+			input := captureInput{
+				reader:     ftdc.NewNativeReader(),
+				files:      files,
+				readerOpts: ftdc.ReaderOptionsForKind(metadata.ProcessKind(), tc.view, false, false),
+				metadata:   metadata,
+				avgBucket:  tc.avg,
+				streamerOpts: derive.Options{
+					IntervalSeconds: 60,
+					GapThreshold:    600 * time.Second,
+					Metadata:        metadata,
+					TimeLocation:    time.UTC,
+				},
+			}
+			renderOpts := render.Options{View: tc.view, ReportPath: root, TimeLocation: time.UTC}
+
+			rows, metricsRange, _, err := collectRows(input)
 			if err != nil {
 				t.Fatal(err)
 			}
-			renderOpts := render.Options{View: view, TimeLocation: time.UTC, MetricsRange: render.MetricsRangeFromRows(rows)}
-
+			batchOpts := renderOpts
+			batchOpts.MetricsRange = metricsRange
+			batchOpts.AvgBucket = tc.avg
 			var batch bytes.Buffer
-			if err := render.Render(&batch, metadata, nil, rows, renderOpts); err != nil {
+			if err := render.Render(&batch, metadata, nil, rows, batchOpts); err != nil {
 				t.Fatal(err)
 			}
 
 			var stream bytes.Buffer
-			renderer, err := render.NewStreamingRenderer(&stream, metadata, renderOpts)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, row := range rows {
-				if err := renderer.RenderRow(row); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := renderer.Close(); err != nil {
+			if err := runStreamingTableOutput(&stream, input, nil, renderOpts); err != nil {
 				t.Fatal(err)
 			}
 
+			if !strings.Contains(stream.String(), fmt.Sprintf("| Samples | %d", len(rows))) {
+				t.Fatalf("streaming header missing Samples=%d", len(rows))
+			}
 			if stream.String() != batch.String() {
 				batchLines := bytes.Split(batch.Bytes(), []byte("\n"))
 				streamLines := bytes.Split(stream.Bytes(), []byte("\n"))
 				for i := 0; i < len(batchLines) && i < len(streamLines); i++ {
 					if string(batchLines[i]) != string(streamLines[i]) {
-						t.Fatalf("streaming table output mismatch for view %s at line %d\nbatch:  %q\nstream: %q", view, i+1, batchLines[i], streamLines[i])
+						t.Fatalf("streaming table output mismatch at line %d\nbatch:  %q\nstream: %q", i+1, batchLines[i], streamLines[i])
 					}
 				}
-				t.Fatalf("streaming table output mismatch for view %s: line counts batch=%d stream=%d", view, len(batchLines), len(streamLines))
+				t.Fatalf("streaming table output mismatch: line counts batch=%d stream=%d", len(batchLines), len(streamLines))
 			}
 		})
 	}
 }
 
-func TestStreamMetricsRangeMatchesDerivedRows(t *testing.T) {
+func TestStreamHeaderStatsMatchesDerivedRows(t *testing.T) {
 	root := filepath.Join("..", "..", "testdata", "diagnostic.data.27000")
 	if _, err := os.Stat(root); err != nil {
 		t.Skip("diagnostic.data.27000 sample directory not present")
@@ -101,13 +126,16 @@ func TestStreamMetricsRangeMatchesDerivedRows(t *testing.T) {
 			TimeLocation:    time.UTC,
 		},
 	}
-	got, err := streamMetricsRange(input)
+	got, count, err := streamHeaderStats(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := render.MetricsRangeFromRows(rows)
 	if !got.Start.Equal(want.Start) || !got.End.Equal(want.End) {
 		t.Fatalf("metrics range mismatch: got=%s..%s want=%s..%s", got.Start.UTC().Format(time.RFC3339), got.End.UTC().Format(time.RFC3339), want.Start.UTC().Format(time.RFC3339), want.End.UTC().Format(time.RFC3339))
+	}
+	if count != len(rows) {
+		t.Fatalf("count=%d want %d", count, len(rows))
 	}
 }
 
