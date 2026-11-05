@@ -39,6 +39,11 @@ var metricRegistry = []metricDefinition{
 	{Section: "replication", Column: "applyBufCnt", Format: "integer", JSONName: "applyBufCnt"},
 	{Section: "replication", Column: "applyBufMB", Format: "mib", JSONName: "applyBufMB"},
 	{Section: "replication", Column: "replNetMB/s", Format: "mib", JSONName: "replNetMB/s", VerboseOnly: true},
+	{Section: "replication", Column: "fetchBatchKB", Format: "integer", JSONName: "fetchBatchKB", VerboseOnly: true},
+	{Section: "replication", Column: "fetchMS", Format: "millis", JSONName: "fetchMS", VerboseOnly: true},
+	{Section: "replication", Column: "fetchEmpty/s", Format: "rate", JSONName: "fetchEmpty/s", VerboseOnly: true},
+	{Section: "replication", Column: "oplogServe/s", Format: "rate", JSONName: "oplogServe/s", VerboseOnly: true},
+	{Section: "replication", Column: "oplogServeMS", Format: "millis", JSONName: "oplogServeMS", VerboseOnly: true},
 	{Section: "replication", Column: "oplogMB", Format: "integer", JSONName: "oplogMB", VerboseOnly: true},
 	{Section: "replication", Column: "oplogUsed%", Format: "percent", JSONName: "oplogUsed%", VerboseOnly: true},
 	{Section: "replication", Column: "flowLagged", Format: "bool", JSONName: "flowLagged", VerboseOnly: true},
@@ -223,7 +228,8 @@ func replicationColumns(nodeLabels []string, verbose bool) []string {
 	cols = append(cols, "majLagS", "rsState")
 	if verbose {
 		cols = append(cols, "hbMs", "applyOps/s", "applyBufCnt", "applyBufMB",
-			"replNetMB/s", "oplogMB", "oplogUsed%", "flowLagged", "flowRate", "flowWaitMS/s")
+			"replNetMB/s", "fetchBatchKB", "fetchMS", "fetchEmpty/s", "oplogServe/s", "oplogServeMS",
+			"oplogMB", "oplogUsed%", "flowLagged", "flowRate", "flowWaitMS/s")
 	}
 	return cols
 }

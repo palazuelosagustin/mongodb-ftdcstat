@@ -353,14 +353,24 @@ func setAppEvictRate(row *Row, c calculator) {
 // fillServerExtra sets the server --verbose columns: admission queues
 // (7.0+), write conflicts, collection scans, query efficiency, transactions.
 func fillServerExtra(row *Row, c calculator, reset bool) {
-	setCurrent(row, "rdQ", c, "serverStatus.queues.execution.read.normalPriority.queueLength")
-	setCurrent(row, "wrQ", c, "serverStatus.queues.execution.write.normalPriority.queueLength")
+	// 8.0 reports the admission queue under queues.execution.*.normalPriority;
+	// 7.0 under wiredTiger.concurrentTransactions.
+	if v, ok := c.currentAny("serverStatus.queues.execution.read.normalPriority.queueLength", "serverStatus.wiredTiger.concurrentTransactions.read.queueLength"); ok {
+		row.Values["rdQ"] = v
+	}
+	if v, ok := c.currentAny("serverStatus.queues.execution.write.normalPriority.queueLength", "serverStatus.wiredTiger.concurrentTransactions.write.queueLength"); ok {
+		row.Values["wrQ"] = v
+	}
 	setCurrent(row, "txnActive", c, "serverStatus.transactions.currentActive")
 	if reset {
 		return
 	}
-	setAverage(row, "rdQMS", c, "serverStatus.queues.execution.read.normalPriority.totalTimeQueuedMicros", "serverStatus.queues.execution.read.normalPriority.addedToQueue", 1000)
-	setAverage(row, "wrQMS", c, "serverStatus.queues.execution.write.normalPriority.totalTimeQueuedMicros", "serverStatus.queues.execution.write.normalPriority.addedToQueue", 1000)
+	for _, q := range []struct{ key, op string }{{"rdQMS", "read"}, {"wrQMS", "write"}} {
+		setAverageAny(row, q.key, c, 1000,
+			[2]string{"serverStatus.queues.execution." + q.op + ".normalPriority.totalTimeQueuedMicros", "serverStatus.queues.execution." + q.op + ".normalPriority.addedToQueue"},
+			[2]string{"serverStatus.wiredTiger.concurrentTransactions." + q.op + ".totalTimeQueuedMicros", "serverStatus.wiredTiger.concurrentTransactions." + q.op + ".addedToQueue"},
+		)
+	}
 	setRate(row, "wrConfl/s", c, "serverStatus.metrics.operation.writeConflicts")
 	setRate(row, "collScans/s", c, "serverStatus.metrics.queryExecutor.collectionScans.total")
 	setAverage(row, "keys/ret", c, "serverStatus.metrics.queryExecutor.scanned", "serverStatus.metrics.document.returned", 1)
@@ -667,8 +677,13 @@ func fillReplication(row *Row, c calculator, members *replMemberRegistry, reset 
 	if avg, ok := averageMemberPingMs(c.cur); ok {
 		row.Values["hbMs"] = avg
 	}
-	setCurrent(row, "applyBufCnt", c, "serverStatus.metrics.repl.buffer.apply.count")
-	setCurrentMiB(row, "applyBufMB", c, "serverStatus.metrics.repl.buffer.apply.sizeBytes")
+	// 8.0 splits the oplog buffer into write/apply; earlier versions have one.
+	if v, ok := c.currentAny("serverStatus.metrics.repl.buffer.apply.count", "serverStatus.metrics.repl.buffer.count"); ok {
+		row.Values["applyBufCnt"] = v
+	}
+	if v, ok := c.currentAny("serverStatus.metrics.repl.buffer.apply.sizeBytes", "serverStatus.metrics.repl.buffer.sizeBytes"); ok {
+		row.Values["applyBufMB"] = v / 1024 / 1024
+	}
 	setCurrentMiB(row, "oplogMB", c, "local.oplog.rs.stats.storageStats.size")
 	if size, ok := c.current("local.oplog.rs.stats.storageStats.size"); ok {
 		if max, ok := c.current("local.oplog.rs.stats.storageStats.maxSize"); ok && max > 0 {
@@ -685,6 +700,16 @@ func fillReplication(row *Row, c calculator, members *replMemberRegistry, reset 
 		setRate(row, "applyOps/s", c, "serverStatus.metrics.repl.apply.ops")
 		setRateScaledAny(row, "flowWaitMS/s", c, 1000, "serverStatus.flowControl.timeAcquiringMicros")
 		setRateScaledAny(row, "replNetMB/s", c, 1024*1024, "serverStatus.metrics.repl.network.bytes")
+		// Oplog fetching as seen by this member as a secondary: batch size
+		// (16384 KB = full batches, the member is behind), time per batch,
+		// and empty batches (caught up).
+		setAverage(row, "fetchBatchKB", c, "serverStatus.metrics.repl.network.bytes", "serverStatus.metrics.repl.network.getmores.num", 1024)
+		setAverage(row, "fetchMS", c, "serverStatus.metrics.repl.network.getmores.totalMillis", "serverStatus.metrics.repl.network.getmores.num", 1)
+		setRate(row, "fetchEmpty/s", c, "serverStatus.metrics.repl.network.getmores.numEmptyBatches")
+		// Oplog serving as seen by this member as a sync source, for all
+		// members fetching from it together.
+		setRate(row, "oplogServe/s", c, "serverStatus.metrics.repl.network.oplogGetMoresProcessed.num")
+		setAverage(row, "oplogServeMS", c, "serverStatus.metrics.repl.network.oplogGetMoresProcessed.totalMillis", "serverStatus.metrics.repl.network.oplogGetMoresProcessed.num", 1)
 	}
 	row.Values["rsState"] = rsState(c.cur)
 }
@@ -1005,6 +1030,21 @@ func setAverage(row *Row, key string, c calculator, numeratorPath, denominatorPa
 		return
 	}
 	row.Values[key] = numerator / denominator / scale
+}
+
+// setAverageAny is setAverage over the first (numerator, denominator) pair
+// whose deltas are available.
+func setAverageAny(row *Row, key string, c calculator, scale float64, pairs ...[2]string) {
+	for _, pair := range pairs {
+		if _, ok := c.delta(pair[0]); !ok {
+			continue
+		}
+		if _, ok := c.delta(pair[1]); !ok {
+			continue
+		}
+		setAverage(row, key, c, pair[0], pair[1], scale)
+		return
+	}
 }
 
 func setCurrentMiB(row *Row, key string, c calculator, path string) {

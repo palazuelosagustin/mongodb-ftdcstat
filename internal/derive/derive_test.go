@@ -1291,3 +1291,59 @@ func TestRowsReplicationOplogAndFlowControl(t *testing.T) {
 		t.Fatalf("busy=%v", busy)
 	}
 }
+
+func TestRowsApplyBufferAndQueueVersionFallbacks(t *testing.T) {
+	v70prev := map[string]float64{
+		"serverStatus.wiredTiger.concurrentTransactions.write.totalTimeQueuedMicros": 0,
+		"serverStatus.wiredTiger.concurrentTransactions.write.addedToQueue":          10,
+	}
+	v70cur := map[string]float64{
+		"serverStatus.metrics.repl.buffer.count":                                     7,
+		"serverStatus.metrics.repl.buffer.sizeBytes":                                 2 * 1024 * 1024,
+		"serverStatus.wiredTiger.concurrentTransactions.write.queueLength":           54,
+		"serverStatus.wiredTiger.concurrentTransactions.write.totalTimeQueuedMicros": 600_000,
+		"serverStatus.wiredTiger.concurrentTransactions.write.addedToQueue":          12,
+	}
+	v := Rows([]model.MetricSample{testSample(0, 0, v70prev), testSample(1, 0, v70cur)}, Options{IntervalSeconds: 1})[0].Values
+	for key, want := range map[string]any{"applyBufCnt": 7.0, "applyBufMB": 2.0, "wrQ": 54.0, "wrQMS": 300.0} {
+		if got := v[key]; got != want {
+			t.Fatalf("7.0 %s=%v want %v", key, got, want)
+		}
+	}
+
+	// 8.0 paths win when both are present.
+	both := map[string]float64{
+		"serverStatus.metrics.repl.buffer.apply.count":                     1,
+		"serverStatus.metrics.repl.buffer.count":                           99,
+		"serverStatus.queues.execution.write.normalPriority.queueLength":   2,
+		"serverStatus.wiredTiger.concurrentTransactions.write.queueLength": 99,
+	}
+	v = Rows([]model.MetricSample{testSample(0, 0, both), testSample(1, 0, both)}, Options{IntervalSeconds: 1})[0].Values
+	if v["applyBufCnt"] != 1.0 || v["wrQ"] != 2.0 {
+		t.Fatalf("8.0 paths should win: applyBufCnt=%v wrQ=%v", v["applyBufCnt"], v["wrQ"])
+	}
+}
+
+func TestRowsOplogFetchAndServe(t *testing.T) {
+	const n = "serverStatus.metrics.repl.network."
+	prev := map[string]float64{
+		n + "bytes": 0, n + "getmores.num": 100, n + "getmores.totalMillis": 1000, n + "getmores.numEmptyBatches": 0,
+		n + "oplogGetMoresProcessed.num": 1000, n + "oplogGetMoresProcessed.totalMillis": 500,
+	}
+	cur := map[string]float64{
+		n + "bytes": 5 * 16 * 1024 * 1024, n + "getmores.num": 105, n + "getmores.totalMillis": 2000, n + "getmores.numEmptyBatches": 0,
+		n + "oplogGetMoresProcessed.num": 1200, n + "oplogGetMoresProcessed.totalMillis": 1300,
+	}
+	v := Rows([]model.MetricSample{testSample(0, 0, prev), testSample(1, 0, cur)}, Options{IntervalSeconds: 1})[0].Values
+	for key, want := range map[string]any{
+		"fetchBatchKB": 16384.0, // five full 16 MB batches
+		"fetchMS":      200.0,
+		"fetchEmpty/s": 0.0,
+		"oplogServe/s": 200.0,
+		"oplogServeMS": 4.0,
+	} {
+		if got := v[key]; got != want {
+			t.Fatalf("%s=%v want %v", key, got, want)
+		}
+	}
+}

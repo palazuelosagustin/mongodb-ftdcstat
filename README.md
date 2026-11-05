@@ -463,7 +463,7 @@ When used with `--view repl`, `--verbose` adds replication apply/buffer,
 fetch, oplog size, and flow control metrics after `majLagS`:
 
 ```text
-lagS node1 node2 ... nodeN majLagS hbMs applyOps/s applyBufCnt applyBufMB replNetMB/s oplogMB oplogUsed% flowLagged flowRate flowWaitMS/s
+lagS node1 node2 ... nodeN majLagS hbMs applyOps/s applyBufCnt applyBufMB replNetMB/s fetchBatchKB fetchMS fetchEmpty/s oplogServe/s oplogServeMS oplogMB oplogUsed% flowLagged flowRate flowWaitMS/s
 ```
 
 For `mongos`, `--view repl` remains the focused router-health view for CLI
@@ -715,6 +715,11 @@ applyOps/s   replication apply throughput in ops/sec, verbose only
 applyBufCnt replication apply buffer item count, verbose only
 applyBufMB  replication apply buffer size in MiB, verbose only
 replNetMB/s  oplog data fetched from the sync source, MiB/s, verbose only
+fetchBatchKB  average oplog batch fetched from the sync source, KiB; 16384 = full batches, verbose only
+fetchMS     average time per oplog batch fetched, milliseconds, verbose only
+fetchEmpty/s  empty oplog batches per second (caught up and waiting), verbose only
+oplogServe/s  oplog batches this member served to members syncing from it, per second, verbose only
+oplogServeMS  average time this member took to serve one oplog batch, milliseconds, verbose only
 oplogMB     oplog size in MiB, verbose only
 oplogUsed%  oplog size as a percent of its configured maximum, verbose only
 flowLagged  1 while flow control considers the majority commit point lagged, verbose only
@@ -729,6 +734,13 @@ Sources: `replSetGetStatus.members[].pingMs`,
 
 ```text
 replNetMB/s   rate(serverStatus.metrics.repl.network.bytes) / 1024 / 1024
+fetchBatchKB  delta(metrics.repl.network.bytes) / delta(metrics.repl.network.getmores.num) / 1024
+fetchMS       delta(metrics.repl.network.getmores.totalMillis) / delta(metrics.repl.network.getmores.num)
+fetchEmpty/s  rate(metrics.repl.network.getmores.numEmptyBatches)
+oplogServe/s  rate(metrics.repl.network.oplogGetMoresProcessed.num)
+oplogServeMS  delta(oplogGetMoresProcessed.totalMillis) / delta(oplogGetMoresProcessed.num)
+applyBufCnt   metrics.repl.buffer.apply.count (8.0) or metrics.repl.buffer.count
+applyBufMB    metrics.repl.buffer.apply.sizeBytes (8.0) or metrics.repl.buffer.sizeBytes, / 1024 / 1024
 oplogMB       local.oplog.rs.stats.storageStats.size / 1024 / 1024
 oplogUsed%    local.oplog.rs.stats.storageStats.size / local.oplog.rs.stats.storageStats.maxSize * 100
 flowLagged    serverStatus.flowControl.isLagged
@@ -742,6 +754,17 @@ window (hours of history) cannot be calculated from it. `oplogUsed%` below
 was created; at about 100 it is full and the oldest entries are being
 removed. Ask for `rs.printReplicationInfo()` output when the window matters.
 `replNetMB/s` is only nonzero on members that fetch the oplog (secondaries).
+
+The fetch columns tell a starved secondary from a slow one. A member that is
+caught up fetches small batches and gets empty ones (`fetchEmpty/s` > 0). A
+member that is behind gets full 16 MB batches (`fetchBatchKB` near 16384), and
+then its fetch rate is about `16 MB * 1000 / fetchMS` per second: if that is
+below the primary's oplog write rate, lag grows whatever its own disk and CPU
+do. An empty or small `applyBufCnt` at the same time confirms the applier is
+waiting for data. On the sync source (usually the primary), `oplogServeMS`
+is the time to serve one batch; it covers every member fetching from it
+together, so a few slow full batches for a lagging member are averaged with
+many cheap ones from members that are caught up.
 `flowRate` is `-` while flow control is not throttling, because MongoDB keeps
 a very large placeholder value there.
 
@@ -808,9 +831,11 @@ txnAbort/s   transactions aborted per second, rate
 Server verbose sources:
 
 ```text
-rdQ, wrQ        serverStatus.queues.execution.<read|write>.normalPriority.queueLength
+rdQ, wrQ        serverStatus.queues.execution.<read|write>.normalPriority.queueLength (8.0)
+                or serverStatus.wiredTiger.concurrentTransactions.<read|write>.queueLength (7.0)
 rdQMS, wrQMS    delta(queues.execution.<read|write>.normalPriority.totalTimeQueuedMicros)
                 / delta(queues.execution.<read|write>.normalPriority.addedToQueue) / 1000
+                (7.0: the same counters under wiredTiger.concurrentTransactions.<read|write>)
 wrConfl/s       rate(serverStatus.metrics.operation.writeConflicts)
 collScans/s     rate(serverStatus.metrics.queryExecutor.collectionScans.total)
 keys/ret        delta(serverStatus.metrics.queryExecutor.scanned)
@@ -822,8 +847,8 @@ txnCommit/s     rate(serverStatus.transactions.totalCommitted)
 txnAbort/s      rate(serverStatus.transactions.totalAborted)
 ```
 
-The admission-queue columns need MongoDB 7.0 or later (`queues.execution`);
-older versions show `-`. `rdQMS` / `wrQMS` are `-` in rows where no operation
+The admission-queue columns need MongoDB 7.0 or later (`queues.execution` in
+8.0, `wiredTiger.concurrentTransactions` in 7.0); older versions show `-`. `rdQMS` / `wrQMS` are `-` in rows where no operation
 queued, and `keys/ret` / `docs/ret` are `-` in rows where no document was
 returned. High `keys/ret` or `docs/ret` (hundreds or more) points to queries
 that examine far more than they return, typically a missing or poor index; a
@@ -866,7 +891,7 @@ ckptPages/s   checkpoint pages written per second, rate
 hsInsert/s    history store inserts per second, rate
 hsRead/s      history store reads per second, rate
 hsWriteMB/s   history store bytes written per second, converted to MB/s, rate
-appEvictMS/s  time application threads spent evicting pages, ms per second
+appEvictMS/s  time application threads spent evicting pages, ms per second (8.0; 7.0 has no such counter)
 appReadMS/s   time application threads spent reading pages from disk into the cache, ms per second
 logMB/s       journal (WiredTiger log) bytes written, MiB per second
 logSyncMS     average journal sync duration, milliseconds

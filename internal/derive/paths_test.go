@@ -178,7 +178,10 @@ func TestInterestingVerboseReplicationPaths(t *testing.T) {
 	if !Interesting("serverStatus.metrics.repl.apply.ops", paths, prefixes, true) {
 		t.Fatal("expected serverStatus.metrics.repl.apply.ops to be interesting")
 	}
-	if Interesting("serverStatus.metrics.repl.buffer.count", paths, prefixes, true) {
+	if !Interesting("serverStatus.metrics.repl.buffer.count", paths, prefixes, true) {
+		t.Fatal("the pre-8.0 apply buffer count should be interesting")
+	}
+	if Interesting("serverStatus.metrics.repl.syncSource.numSelections", paths, prefixes, true) {
 		t.Fatal("broad metrics.repl path should not be interesting")
 	}
 	if Interesting("replSetGetStatus.set", paths, prefixes, true) {
