@@ -353,7 +353,12 @@ pingMS      average of those ping times, milliseconds, over hosts with a real
             or it divided by 1000) are skipped; `-` when no host has one,
             for example right after mongos starts
 helloOps/s  rate(router.connPoolStats.replicaSetMonitor.hello.totalCalls)
-helloMS     delta(hello.totalLatencyMicros) / delta(hello.totalCalls) / 1000
+helloMS     delta(hello.totalLatencyMicros) / delta(hello.totalCalls) / 1000;
+            `-` when hello.currentlyActive dropped in the interval: replica-set
+            monitoring keeps one long-lived hello open per host, and when those
+            close their whole lifetime lands in totalLatencyMicros at once
+            (minutes or hours), which is not request latency; helloAct
+            (verbose) shows the drop
 ghaOps/s    rate(router.connPoolStats.replicaSetMonitor.getHostAndRefresh.totalCalls)
 ghaMS       delta(getHostAndRefresh.totalLatencyMicros) / delta(getHostAndRefresh.totalCalls) / 1000
 ```

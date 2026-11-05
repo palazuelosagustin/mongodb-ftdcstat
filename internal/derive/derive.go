@@ -571,8 +571,14 @@ func fillMongosRouter(row *Row, c calculator, reset bool) {
 	setRate(row, "poolRefresh/s", c, "router.connPoolStats.totalRefreshed")
 	setRate(row, "helloOps/s", c, "router.connPoolStats.replicaSetMonitor.hello.totalCalls")
 	setRate(row, "ghaOps/s", c, "router.connPoolStats.replicaSetMonitor.getHostAndRefresh.totalCalls")
-	if avg, ok := latencyAverageMillis(c, "router.connPoolStats.replicaSetMonitor.hello.totalLatencyMicros", "router.connPoolStats.replicaSetMonitor.hello.totalCalls"); ok {
-		row.Values["helloMS"] = avg
+	// Replica-set monitoring keeps long-lived hello calls open (one per
+	// monitored host). When they close, their whole lifetime is added to
+	// totalLatencyMicros at once, which is not request latency. Skip helloMS
+	// for intervals where currentlyActive dropped; helloAct shows the drop.
+	if !gaugeDropped(c, "router.connPoolStats.replicaSetMonitor.hello.currentlyActive") {
+		if avg, ok := latencyAverageMillis(c, "router.connPoolStats.replicaSetMonitor.hello.totalLatencyMicros", "router.connPoolStats.replicaSetMonitor.hello.totalCalls"); ok {
+			row.Values["helloMS"] = avg
+		}
 	}
 	if avg, ok := latencyAverageMillis(c, "router.connPoolStats.replicaSetMonitor.getHostAndRefresh.totalLatencyMicros", "router.connPoolStats.replicaSetMonitor.getHostAndRefresh.totalCalls"); ok {
 		row.Values["ghaMS"] = avg
@@ -710,6 +716,18 @@ const unknownPingMillis = 1e12
 // mongosPingSummary returns the number of hosts in the router ping table and
 // the average of their real ping times. ok is false when no host has a real
 // ping time, for example right after mongos starts.
+// gaugeDropped reports whether a gauge is lower in the current sample than in
+// the previous one. calculator.delta cannot be used: it treats any decrease
+// as a counter reset and reports no value.
+func gaugeDropped(c calculator, path string) bool {
+	prev, ok := c.prev.Get(path)
+	if !ok {
+		return false
+	}
+	cur, ok := c.cur.Get(path)
+	return ok && cur < prev
+}
+
 func mongosPingSummary(sample model.MetricSample) (hosts int, avgMillis float64, ok bool) {
 	var sum float64
 	var known int

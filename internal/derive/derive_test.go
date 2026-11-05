@@ -983,3 +983,50 @@ func TestRowsMongosPingSkipsUnknownSentinels(t *testing.T) {
 		})
 	}
 }
+
+func TestRowsMongosHelloLatencySkipsClosedMonitoringCalls(t *testing.T) {
+	const base = "router.connPoolStats.replicaSetMonitor.hello."
+	tests := []struct {
+		name      string
+		prev      map[string]float64
+		cur       map[string]float64
+		wantHello any
+	}{
+		{
+			name:      "normal calls",
+			prev:      map[string]float64{base + "totalCalls": 8, base + "totalLatencyMicros": 1000, base + "currentlyActive": 4},
+			cur:       map[string]float64{base + "totalCalls": 10, base + "totalLatencyMicros": 4000, base + "currentlyActive": 4},
+			wantHello: 1.5,
+		},
+		{
+			name:      "long-lived monitoring calls closed",
+			prev:      map[string]float64{base + "totalCalls": 8, base + "totalLatencyMicros": 1093051, base + "currentlyActive": 4},
+			cur:       map[string]float64{base + "totalCalls": 11, base + "totalLatencyMicros": 5878273512, base + "currentlyActive": 0},
+			wantHello: nil,
+		},
+		{
+			name:      "more calls became active",
+			prev:      map[string]float64{base + "totalCalls": 8, base + "totalLatencyMicros": 1000, base + "currentlyActive": 0},
+			cur:       map[string]float64{base + "totalCalls": 10, base + "totalLatencyMicros": 3000, base + "currentlyActive": 4},
+			wantHello: 1.0,
+		},
+		{
+			name:      "currentlyActive missing",
+			prev:      map[string]float64{base + "totalCalls": 8, base + "totalLatencyMicros": 1000},
+			cur:       map[string]float64{base + "totalCalls": 10, base + "totalLatencyMicros": 3000},
+			wantHello: 1.0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := Rows([]model.MetricSample{testSample(0, 0, tt.prev), testSample(1, 0, tt.cur)},
+				Options{IntervalSeconds: 1, Metadata: testMetadataWithProcess(model.ProcessKindMongos)})
+			if len(rows) != 1 {
+				t.Fatalf("got %d rows", len(rows))
+			}
+			if got := rows[0].Values["helloMS"]; got != tt.wantHello {
+				t.Fatalf("helloMS=%v want %v", got, tt.wantHello)
+			}
+		})
+	}
+}
