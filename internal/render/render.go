@@ -87,7 +87,7 @@ func RenderJSON(w io.Writer, metadata model.Metadata, warnings []model.Warning, 
 	rsInfo := derive.ReplSetInfoFromMetadata(metadata)
 	layout := layoutForView(opts.View, replicationNodeLabels(rsInfo, rows), ioDeviceLabels(rows), opts.Verbose, opts.Pressure, metadata.ProcessKind())
 	payload := map[string]any{
-		"metadata": metadata.Summary(),
+		"metadata": MetadataSummary(metadata),
 		"rsInfo":   rsInfoForJSON(rsInfo),
 		"warnings": warnings,
 		"view":     opts.View,

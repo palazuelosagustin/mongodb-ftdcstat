@@ -156,7 +156,7 @@ func BuildDataset(metadata model.Metadata, warnings []model.Warning, rows []deri
 			Avg:        avgInfo(opts.Avg),
 			TimeRange:  timeRangeInfo(opts.TimeRange, loc),
 			HeaderText: render.HeaderText(metadata, render.Options{View: renderOpts.View, AvgBucket: renderOpts.AvgBucket, MetricsRange: render.MetricsRangeFromRows(rows), ReportPath: renderOpts.ReportPath, SampleCount: len(rows), IntervalSeconds: renderOpts.IntervalSeconds, Verbose: renderOpts.Verbose, Pressure: renderOpts.Pressure, TimeLocation: loc}),
-			Metadata:   metadata.Summary(),
+			Metadata:   render.MetadataSummary(metadata),
 			Warnings:   append([]model.Warning(nil), warnings...),
 			Sections:   sections,
 			RowCount:   len(rows),

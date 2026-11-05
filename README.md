@@ -247,6 +247,25 @@ section objects such as `replication` and `server`; `replication.lagS` contains
 the per-node lag values, `replication.majLagS` contains the majority commit lag,
 and unavailable lag values are `null`.
 
+`metadata` is a compact summary of the capture, with the same facts as the CLI
+header tables. It is not the raw FTDC metadata documents (`buildInfo`,
+`hostInfo`, `getParameter`, ...), which are tens of KB of mostly defaults and
+are not included in any output:
+
+```text
+process      mongod or mongos
+host         hostname, os, kernel, arch, cpuCores, memoryMB, maxConnections
+build        version, gitVersion, modules, storageEngine, allocator, openssl,
+             perconaFeatures (lists are JSON arrays)
+cmdLineOpts  parsed startup options as flat dotted keys with their JSON types,
+             for example "storage.wiredTiger.engineConfig.cacheSizeGB": 0.5;
+             setParameter is listed under parameters instead
+parameters   wtCache plus explicitly configured setParameter values
+```
+
+Missing fields are left out. The same summary is used by `--stats` /
+`--findings` JSON and by the web `/api/metadata` endpoint.
+
 ### `--web`
 
 `--web` starts the local dashboard UI and still prints the normal terminal table.

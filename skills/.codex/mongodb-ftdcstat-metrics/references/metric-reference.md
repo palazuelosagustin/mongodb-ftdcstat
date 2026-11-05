@@ -22,7 +22,7 @@ Important flags:
 - `--stats`: per-column n, null%, min, avg, p50/p95/p99 (within 1%), max, and max time instead of rows. `--findings`: timeline of first process, restarts, gaps, and `rsState` changes, no thresholds. Combinable; not with `--avg`, `--web`, `--tui`.
 - `--from ISO_TIME` / `--to ISO_TIME`: filter samples; `from` is inclusive and `to` is exclusive.
 - `--device DEVICE`: filter disk-derived fields to one device.
-- `--json`: output metadata, warnings, selected view, derived rows, and `rsInfo.members` mapping.
+- `--json`: output a compact metadata summary (same facts as the CLI header), warnings, selected view, derived rows, and `rsInfo.members` mapping.
 - `--web`: serve a local plotting UI and still print terminal output; cannot combine with `--json`.
 - `--verbose`: expands only `repl`, `wt`, `system`, and `network`; not `summary`.
 - `--pressure`: only supported for `--view system`; appends Linux PSI columns in a separate pressure section.

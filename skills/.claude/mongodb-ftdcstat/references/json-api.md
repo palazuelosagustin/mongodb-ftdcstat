@@ -8,7 +8,7 @@ One JSON document on stdout. Top-level keys:
 |---|---|
 | `view` | Selected view (`summary`, `server`, `wt`, `system`, `io`, `network`, `repl`) |
 | `avg` | `{enabled, bucket, datetime}`; with `--avg`, `datetime` is `bucket_start` |
-| `metadata` | Latest metadata docs by name: `buildInfo`, `getCmdLineOpts`, `hostInfo`, and for mongod also `getParameter`, `serverStatus` |
+| `metadata` | Compact summary, same facts as the CLI header: `process`, `host {hostname, os, kernel, arch, cpuCores, memoryMB, maxConnections}`, `build {version, gitVersion, modules, storageEngine, allocator, openssl, perconaFeatures}`, `cmdLineOpts` (flat dotted keys, typed values), `parameters` (`wtCache` + explicit `setParameter`). Missing fields are omitted. Raw FTDC metadata documents are not output |
 | `rsInfo` | `{set, members}`; `members` maps `node1..nodeN` to `host:port`. On mongos: `{"set": "-", "members": {}}` |
 | `warnings` | Reader/derivation warnings, may be empty |
 | `rows` | Derived rows, one per display interval or `--avg` bucket |
@@ -51,12 +51,14 @@ $F --view repl | jq -r '.rsInfo.members as $m | .rows[] | .time as $t | .replica
 $F | jq -r '.rows[] | select(.processMarker) | [.time, .processMarker] | @tsv'
 
 # server version and configured WT cache size
-$F | jq '{version: .metadata.buildInfo.version, cacheSizeGB: .metadata.getCmdLineOpts.parsed.storage.wiredTiger.engineConfig.cacheSizeGB}'
+$F | jq '{version: .metadata.build.version, wtCache: .metadata.parameters.wtCache}'
+
+# any startup option (flat dotted keys)
+$F | jq '.metadata.cmdLineOpts["storage.dbPath"]'
 ```
 
-`metadata.*` are the raw FTDC metadata documents; their fields vary by version
-and by what was set on the command line, so check with `jq '.metadata | keys'`
-before relying on a path.
+Which `metadata` fields exist depends on what FTDC captured; missing ones are
+omitted, so use `// null` or check with `jq '.metadata | keys'`.
 
 ## `--stats` / `--findings` with `--json`
 
@@ -92,7 +94,7 @@ change the window or view, restart the tool with different flags.
 | `/` | Chart UI (`--web`) |
 | `/tui` | Scrollable table UI (`--tui`) |
 | `/app.js`, `/style.css`, `/tui.js`, `/tui.css` | Embedded static assets |
-| `/api/metadata` | `view`, `avg`, `timeRange {from,to}` (empty without `--from/--to`), `headerText` (the CLI header as preformatted text), `metadata`, `warnings`, `sections` (`[{name, metrics: [{column, label, jsonName, format, default}]}]`), `rowCount` |
+| `/api/metadata` | `view`, `avg`, `timeRange {from,to}` (empty without `--from/--to`), `headerText` (the CLI header as preformatted text), `metadata` (the same compact summary as `--json`), `warnings`, `sections` (`[{name, metrics: [{column, label, jsonName, format, default}]}]`), `rowCount` |
 | `/api/data` | `view`, `avg`, `sections` (name → column list), `rows` keyed by `datetime` and chart-group names such as `"wiredTiger / Tickets"` |
 | `/api/table` | `columns` (`[{key, label, section, subsection, fixed}]`) and `rows` (`[{cells: [string]}]`), already formatted like the terminal table |
 
