@@ -106,8 +106,8 @@ wtCache%    WiredTiger cache used percent, derived
 dirty%      dirty bytes as percent of configured cache, derived
 wtRdMB/s    bytes read into WT cache per second, rate
 wtWrMB/s    bytes written from WT cache per second, rate
-evict/s     pages evicted by application threads per second, rate
-appEvict/s  application thread eviction/page-read count per second, rate
+evict/s     pages evicted per second by all threads, rate
+appEvict/s  pages evicted by application threads per second, rate
 ckptMS      most recent WiredTiger checkpoint duration in milliseconds
 rdTkt       WiredTiger read tickets available, raw
 wrTkt       WiredTiger write tickets available, raw
@@ -150,14 +150,14 @@ wtWrMB/s    rate(serverStatus.wiredTiger.cache.bytes written from cache) / 1024 
 evict/s     rate sum, first available group:
             serverStatus.wiredTiger.cache.pages evicted by eviction server
             serverStatus.wiredTiger.cache.pages evicted by application threads
-            fallback:
-            serverStatus.wiredTiger.cache.pages evicted because they exceeded the in-memory maximum
+            fallback (newer WiredTiger):
             serverStatus.wiredTiger.cache.unmodified pages evicted
             serverStatus.wiredTiger.cache.modified pages evicted
-            fallback:
-            serverStatus.wiredTiger.cache.eviction server candidate queue empty when topping up
-            serverStatus.wiredTiger.cache.eviction server candidate queue not empty when topping up
-appEvict/s  rate(serverStatus.wiredTiger.cache.application threads page read from disk to cache count)
+appEvict/s  first available:
+            rate(serverStatus.wiredTiger.cache.pages evicted by application threads)
+            fallback (newer WiredTiger), clamped to zero:
+            rate(serverStatus.wiredTiger.cache.page evict attempts by application threads)
+            - rate(serverStatus.wiredTiger.cache.page evict failures by application threads)
 evictWalks/s
             rate sum:
             serverStatus.wiredTiger.cache.eviction walks started from root of tree
@@ -167,10 +167,9 @@ evictBusy/s rate sum:
             serverStatus.wiredTiger.cache.pages selected for eviction unable to be evicted because of active children on an internal page
             serverStatus.wiredTiger.cache.pages selected for eviction unable to be evicted because of failure in reconciliation
             serverStatus.wiredTiger.cache.pages selected for eviction unable to be evicted because of a cache overflow item
-ckptMS      first available:
-            serverStatus.wiredTiger.transaction.transaction checkpoint most recent duration for gathering all handles (usecs)
-            serverStatus.wiredTiger.checkpoint.most recent duration for gathering all handles (usecs)
-            then / 1000
+ckptMS      first available, already in milliseconds:
+            serverStatus.wiredTiger.checkpoint.most recent time (msecs)
+            serverStatus.wiredTiger.transaction.transaction checkpoint most recent time (msecs)
 ckptPages/s first available rate:
             serverStatus.wiredTiger.transaction.transaction checkpoint pages written
             serverStatus.wiredTiger.checkpoint-cleanup.pages written

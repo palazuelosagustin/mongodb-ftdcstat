@@ -9,13 +9,10 @@ import (
 	"mongodb-ftdcstat/internal/render"
 )
 
-func TestParseArgsDefaultIntervalIsSixty(t *testing.T) {
+func TestParseArgsDefaultViewIsSummary(t *testing.T) {
 	opts, err := parseArgs([]string{"diagnostic.data"})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if opts.Interval != 60 {
-		t.Fatalf("interval=%d", opts.Interval)
 	}
 	if opts.View != "summary" {
 		t.Fatalf("view=%s", opts.View)
@@ -147,10 +144,15 @@ func TestParseArgsAvgDurationRangeFails(t *testing.T) {
 	}
 }
 
-func TestParseArgsAvgRejectsExplicitInterval(t *testing.T) {
-	_, err := parseArgs([]string{"diagnostic.data", "--avg", "5m", "--interval", "120"})
-	if err == nil || !strings.Contains(err.Error(), "--avg cannot be combined with --interval") {
-		t.Fatalf("err=%v", err)
+func TestParseArgsRejectsInterval(t *testing.T) {
+	for _, args := range [][]string{
+		{"diagnostic.data", "--interval", "120"},
+		{"diagnostic.data", "--interval=120"},
+	} {
+		_, err := parseArgs(args)
+		if err == nil || !strings.Contains(err.Error(), "--interval is no longer supported") || !strings.Contains(err.Error(), "--avg") {
+			t.Fatalf("%v: err=%v", args, err)
+		}
 	}
 }
 

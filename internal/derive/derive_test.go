@@ -767,36 +767,36 @@ func TestRowsCalculatesPressureFromAvg10(t *testing.T) {
 
 func TestRowsCalculatesVerboseWiredTigerMetrics(t *testing.T) {
 	prev := testSample(0, 0, map[string]float64{
-		"serverStatus.wiredTiger.cache.bytes currently in the cache":                                                        256 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.maximum bytes configured":                                                            1024 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.tracked dirty bytes in the cache":                                                    32 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.bytes belonging to the updates in the cache":                                         16 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.bytes read into cache":                                                               100 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.bytes written from cache":                                                            200 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.eviction walks started from root of tree":                                            10,
-		"serverStatus.wiredTiger.cache.eviction walks started from saved location in tree":                                  20,
-		"serverStatus.wiredTiger.cache.pages selected for eviction unable to be evicted":                                    30,
-		"serverStatus.wiredTiger.transaction.transaction checkpoint pages written":                                          100,
-		"serverStatus.wiredTiger.cache.history store table insert calls":                                                    200,
-		"serverStatus.wiredTiger.cache.history store table read calls":                                                      300,
-		"serverStatus.wiredTiger.cache.bytes written from cache into history store":                                         400 * 1024 * 1024,
-		"serverStatus.wiredTiger.transaction.transaction checkpoint most recent duration for gathering all handles (usecs)": 1000,
+		"serverStatus.wiredTiger.cache.bytes currently in the cache":                       256 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.maximum bytes configured":                           1024 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.tracked dirty bytes in the cache":                   32 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.bytes belonging to the updates in the cache":        16 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.bytes read into cache":                              100 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.bytes written from cache":                           200 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.eviction walks started from root of tree":           10,
+		"serverStatus.wiredTiger.cache.eviction walks started from saved location in tree": 20,
+		"serverStatus.wiredTiger.cache.pages selected for eviction unable to be evicted":   30,
+		"serverStatus.wiredTiger.transaction.transaction checkpoint pages written":         100,
+		"serverStatus.wiredTiger.cache.history store table insert calls":                   200,
+		"serverStatus.wiredTiger.cache.history store table read calls":                     300,
+		"serverStatus.wiredTiger.cache.bytes written from cache into history store":        400 * 1024 * 1024,
+		"serverStatus.wiredTiger.checkpoint.most recent time (msecs)":                      1,
 	})
 	cur := testSample(10, 0, map[string]float64{
-		"serverStatus.wiredTiger.cache.bytes currently in the cache":                                                        512 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.maximum bytes configured":                                                            1024 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.tracked dirty bytes in the cache":                                                    64 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.bytes belonging to the updates in the cache":                                         32 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.bytes read into cache":                                                               120 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.bytes written from cache":                                                            210 * 1024 * 1024,
-		"serverStatus.wiredTiger.cache.eviction walks started from root of tree":                                            20,
-		"serverStatus.wiredTiger.cache.eviction walks started from saved location in tree":                                  25,
-		"serverStatus.wiredTiger.cache.pages selected for eviction unable to be evicted":                                    40,
-		"serverStatus.wiredTiger.transaction.transaction checkpoint pages written":                                          140,
-		"serverStatus.wiredTiger.cache.history store table insert calls":                                                    220,
-		"serverStatus.wiredTiger.cache.history store table read calls":                                                      330,
-		"serverStatus.wiredTiger.cache.bytes written from cache into history store":                                         405 * 1024 * 1024,
-		"serverStatus.wiredTiger.transaction.transaction checkpoint most recent duration for gathering all handles (usecs)": 2000,
+		"serverStatus.wiredTiger.cache.bytes currently in the cache":                       512 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.maximum bytes configured":                           1024 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.tracked dirty bytes in the cache":                   64 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.bytes belonging to the updates in the cache":        32 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.bytes read into cache":                              120 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.bytes written from cache":                           210 * 1024 * 1024,
+		"serverStatus.wiredTiger.cache.eviction walks started from root of tree":           20,
+		"serverStatus.wiredTiger.cache.eviction walks started from saved location in tree": 25,
+		"serverStatus.wiredTiger.cache.pages selected for eviction unable to be evicted":   40,
+		"serverStatus.wiredTiger.transaction.transaction checkpoint pages written":         140,
+		"serverStatus.wiredTiger.cache.history store table insert calls":                   220,
+		"serverStatus.wiredTiger.cache.history store table read calls":                     330,
+		"serverStatus.wiredTiger.cache.bytes written from cache into history store":        405 * 1024 * 1024,
+		"serverStatus.wiredTiger.checkpoint.most recent time (msecs)":                      2,
 	})
 	rows := Rows([]model.MetricSample{prev, cur}, Options{IntervalSeconds: 1})
 	if len(rows) != 1 {
@@ -821,5 +821,109 @@ func TestRowsCalculatesVerboseWiredTigerMetrics(t *testing.T) {
 		if got := values[key]; got != wantValue {
 			t.Fatalf("%s=%v want %v", key, got, wantValue)
 		}
+	}
+}
+
+func TestRowsCheckpointDurationUsesMostRecentTime(t *testing.T) {
+	for _, path := range []string{
+		"serverStatus.wiredTiger.checkpoint.most recent time (msecs)",
+		"serverStatus.wiredTiger.transaction.transaction checkpoint most recent time (msecs)",
+	} {
+		prev := testSample(0, 0, map[string]float64{path: 100})
+		cur := testSample(1, 0, map[string]float64{
+			path: 250,
+			"serverStatus.wiredTiger.checkpoint.most recent duration for gathering all handles (usecs)": 9000,
+		})
+		rows := Rows([]model.MetricSample{prev, cur}, Options{IntervalSeconds: 1})
+		if len(rows) != 1 {
+			t.Fatalf("%s: got %d rows", path, len(rows))
+		}
+		if got := rows[0].Values["ckptMS"]; got != float64(250) {
+			t.Fatalf("%s: ckptMS=%v want 250", path, got)
+		}
+	}
+}
+
+func TestRowsEvictionRates(t *testing.T) {
+	tests := []struct {
+		name         string
+		prev, cur    map[string]float64
+		wantEvict    any
+		wantAppEvict any
+	}{
+		{
+			name: "older WiredTiger counts evicted pages by thread type",
+			prev: map[string]float64{
+				"serverStatus.wiredTiger.cache.pages evicted by eviction server":     100,
+				"serverStatus.wiredTiger.cache.pages evicted by application threads": 10,
+			},
+			cur: map[string]float64{
+				"serverStatus.wiredTiger.cache.pages evicted by eviction server":     130,
+				"serverStatus.wiredTiger.cache.pages evicted by application threads": 20,
+			},
+			wantEvict:    float64(4),
+			wantAppEvict: float64(1),
+		},
+		{
+			name: "newer WiredTiger uses modified/unmodified totals and app attempts minus failures",
+			prev: map[string]float64{
+				"serverStatus.wiredTiger.cache.unmodified pages evicted":                               100,
+				"serverStatus.wiredTiger.cache.modified pages evicted":                                 50,
+				"serverStatus.wiredTiger.cache.page evict attempts by application threads":             40,
+				"serverStatus.wiredTiger.cache.page evict failures by application threads":             5,
+				"serverStatus.wiredTiger.cache.application threads page read from disk to cache count": 0,
+			},
+			cur: map[string]float64{
+				"serverStatus.wiredTiger.cache.unmodified pages evicted":                               160,
+				"serverStatus.wiredTiger.cache.modified pages evicted":                                 70,
+				"serverStatus.wiredTiger.cache.page evict attempts by application threads":             70,
+				"serverStatus.wiredTiger.cache.page evict failures by application threads":             15,
+				"serverStatus.wiredTiger.cache.application threads page read from disk to cache count": 1000,
+			},
+			wantEvict:    float64(8),
+			wantAppEvict: float64(2),
+		},
+		{
+			name: "eviction queue counters are not evictions",
+			prev: map[string]float64{
+				"serverStatus.wiredTiger.cache.eviction server candidate queue empty when topping up":     0,
+				"serverStatus.wiredTiger.cache.eviction server candidate queue not empty when topping up": 0,
+			},
+			cur: map[string]float64{
+				"serverStatus.wiredTiger.cache.eviction server candidate queue empty when topping up":     100,
+				"serverStatus.wiredTiger.cache.eviction server candidate queue not empty when topping up": 100,
+			},
+			wantEvict:    nil,
+			wantAppEvict: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows := Rows([]model.MetricSample{testSample(0, 0, tt.prev), testSample(10, 0, tt.cur)}, Options{IntervalSeconds: 1})
+			if len(rows) != 1 {
+				t.Fatalf("got %d rows", len(rows))
+			}
+			if got := rows[0].Values["evict/s"]; got != tt.wantEvict {
+				t.Fatalf("evict/s=%v want %v", got, tt.wantEvict)
+			}
+			if got := rows[0].Values["appEvict/s"]; got != tt.wantAppEvict {
+				t.Fatalf("appEvict/s=%v want %v", got, tt.wantAppEvict)
+			}
+		})
+	}
+}
+
+func TestRowsOneSecondIntervalKeepsJitteredSamples(t *testing.T) {
+	base := time.Unix(100, 0).UTC()
+	var samples []model.MetricSample
+	for _, offsetMs := range []int{0, 1000, 1990, 2985, 3990} {
+		samples = append(samples, model.MetricSample{
+			Time:   base.Add(time.Duration(offsetMs) * time.Millisecond),
+			Values: map[string]float64{"serverStatus.opcounters.insert": float64(offsetMs)},
+		})
+	}
+	rows := Rows(samples, Options{IntervalSeconds: 1})
+	if len(rows) != len(samples)-1 {
+		t.Fatalf("got %d rows want %d", len(rows), len(samples)-1)
 	}
 }

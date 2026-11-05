@@ -84,7 +84,9 @@ func (s *Streamer) Add(cur model.MetricSample) (Row, bool) {
 	if cur.Time.IsZero() || prev.Time.IsZero() || !cur.Time.After(prev.Time) {
 		return Row{}, false
 	}
-	if !s.lastRendered.IsZero() && cur.Time.Sub(s.lastRendered) < time.Duration(s.opts.IntervalSeconds)*time.Second {
+	// A 1s spacing keeps every sample: FTDC timestamps jitter by a few
+	// milliseconds, so adjacent samples can be slightly under 1s apart.
+	if s.opts.IntervalSeconds > 1 && !s.lastRendered.IsZero() && cur.Time.Sub(s.lastRendered) < time.Duration(s.opts.IntervalSeconds)*time.Second {
 		return Row{}, false
 	}
 	calc := calculator{prev: prev, cur: cur, dt: cur.Time.Sub(prev.Time).Seconds()}
@@ -245,18 +247,11 @@ func fillWT(row *Row, c calculator, reset bool) {
 		)
 		if _, ok := row.Values["evict/s"]; !ok {
 			setRateSum(row, "evict/s", c,
-				"serverStatus.wiredTiger.cache.pages evicted because they exceeded the in-memory maximum",
 				"serverStatus.wiredTiger.cache.unmodified pages evicted",
 				"serverStatus.wiredTiger.cache.modified pages evicted",
 			)
 		}
-		if _, ok := row.Values["evict/s"]; !ok {
-			setRateSum(row, "evict/s", c,
-				"serverStatus.wiredTiger.cache.eviction server candidate queue empty when topping up",
-				"serverStatus.wiredTiger.cache.eviction server candidate queue not empty when topping up",
-			)
-		}
-		setRate(row, "appEvict/s", c, "serverStatus.wiredTiger.cache.application threads page read from disk to cache count")
+		setAppEvictRate(row, c)
 		setRateSum(row, "evictWalks/s", c,
 			"serverStatus.wiredTiger.cache.eviction walks started from root of tree",
 			"serverStatus.wiredTiger.cache.eviction walks started from saved location in tree",
@@ -286,11 +281,8 @@ func fillWT(row *Row, c calculator, reset bool) {
 			"serverStatus.wiredTiger.history store.history store table bytes written",
 		)
 	}
-	if v, ok := c.currentAny(
-		"serverStatus.wiredTiger.transaction.transaction checkpoint most recent duration for gathering all handles (usecs)",
-		"serverStatus.wiredTiger.checkpoint.most recent duration for gathering all handles (usecs)",
-	); ok {
-		row.Values["ckptMS"] = v / 1000
+	if v, ok := c.currentAny(checkpointDurationPaths...); ok {
+		row.Values["ckptMS"] = v
 	}
 	if v, ok := c.currentAny("serverStatus.wiredTiger.concurrentTransactions.read.available", "serverStatus.queues.execution.read.available"); ok {
 		row.Values["rdTkt"] = v
@@ -298,6 +290,33 @@ func fillWT(row *Row, c calculator, reset bool) {
 	if v, ok := c.currentAny("serverStatus.wiredTiger.concurrentTransactions.write.available", "serverStatus.queues.execution.write.available"); ok {
 		row.Values["wrTkt"] = v
 	}
+}
+
+// checkpointDurationPaths hold the duration of the most recent WiredTiger
+// checkpoint in milliseconds: the 7.0+ "checkpoint" group first, then the
+// older "transaction" group.
+var checkpointDurationPaths = []string{
+	"serverStatus.wiredTiger.checkpoint.most recent time (msecs)",
+	"serverStatus.wiredTiger.transaction.transaction checkpoint most recent time (msecs)",
+}
+
+// setAppEvictRate sets appEvict/s, the pages evicted by application threads
+// per second. Older WiredTiger builds count them directly; newer builds only
+// expose attempts and failures, so successful evictions are their difference.
+func setAppEvictRate(row *Row, c calculator) {
+	if v, ok := c.rate("serverStatus.wiredTiger.cache.pages evicted by application threads"); ok {
+		row.Values["appEvict/s"] = v
+		return
+	}
+	attempts, ok := c.rate("serverStatus.wiredTiger.cache.page evict attempts by application threads")
+	if !ok {
+		return
+	}
+	failures, ok := c.rate("serverStatus.wiredTiger.cache.page evict failures by application threads")
+	if !ok {
+		failures = 0
+	}
+	row.Values["appEvict/s"] = math.Max(attempts-failures, 0)
 }
 
 func fillMemoryLatencyConnections(row *Row, c calculator, reset bool) {

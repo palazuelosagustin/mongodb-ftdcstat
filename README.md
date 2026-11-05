@@ -13,7 +13,7 @@ go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat
 ## Usage
 
 ```bash
-mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
+mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
 
 The input is a directory, not a single FTDC file. The tool discovers
@@ -66,17 +66,14 @@ mongod: replication | server | network | system | io | wiredTiger
 mongos: router | server | network | system | io | connPool
 ```
 
-### `--interval N`
+### Row spacing
 
-Default: `60`.
+Every FTDC sample becomes one row. With the default MongoDB
+`diagnosticDataCollectionPeriodMillis=1000`, that is about one row per second.
+Rates are calculated from adjacent raw samples.
 
-`--interval` controls display spacing in seconds. It does not aggregate metrics
-into buckets. FTDC samples are reconstructed in chronological order, rates are
-calculated from adjacent raw samples, and rows are printed no more often than
-the selected interval.
-
-With the default MongoDB `diagnosticDataCollectionPeriodMillis=1000`,
-`--interval 60` usually means about one line per minute.
+`--interval` is no longer supported and is rejected with an error. Use `--avg`
+to group rows into time buckets, or `--from` / `--to` to narrow the range.
 
 ### `--avg DURATION`
 
@@ -89,7 +86,7 @@ mongodb-ftdcstat diagnostic.data --web --view summary --avg 5m
 ```
 
 Valid bucket sizes are `1m` through `15m`. `--avg` rejects smaller or larger
-durations, and it cannot be combined with an explicit `--interval`.
+durations.
 
 When enabled, `mongodb-ftdcstat` prints:
 
@@ -561,8 +558,8 @@ wtCache%    WiredTiger cache used percent, derived
 dirty%      dirty bytes as percent of configured cache, derived
 wtRdMB/s    bytes read into WT cache per second, rate
 wtWrMB/s    bytes written from WT cache per second, rate
-evict/s     pages evicted by application threads per second, rate
-appEvict/s  application thread eviction/page-read count per second, rate
+evict/s     pages evicted per second by all threads, rate
+appEvict/s  pages evicted by application threads per second, rate
 ckptMS      most recent WiredTiger checkpoint duration in milliseconds
 rdTkt       WiredTiger read tickets available, raw
 wrTkt       WiredTiger write tickets available, raw
@@ -605,14 +602,14 @@ wtWrMB/s    rate(serverStatus.wiredTiger.cache.bytes written from cache) / 1024 
 evict/s     rate sum, first available group:
             serverStatus.wiredTiger.cache.pages evicted by eviction server
             serverStatus.wiredTiger.cache.pages evicted by application threads
-            fallback:
-            serverStatus.wiredTiger.cache.pages evicted because they exceeded the in-memory maximum
+            fallback (newer WiredTiger):
             serverStatus.wiredTiger.cache.unmodified pages evicted
             serverStatus.wiredTiger.cache.modified pages evicted
-            fallback:
-            serverStatus.wiredTiger.cache.eviction server candidate queue empty when topping up
-            serverStatus.wiredTiger.cache.eviction server candidate queue not empty when topping up
-appEvict/s  rate(serverStatus.wiredTiger.cache.application threads page read from disk to cache count)
+appEvict/s  first available:
+            rate(serverStatus.wiredTiger.cache.pages evicted by application threads)
+            fallback (newer WiredTiger), clamped to zero:
+            rate(serverStatus.wiredTiger.cache.page evict attempts by application threads)
+            - rate(serverStatus.wiredTiger.cache.page evict failures by application threads)
 evictWalks/s
             rate sum:
             serverStatus.wiredTiger.cache.eviction walks started from root of tree
@@ -622,10 +619,9 @@ evictBusy/s rate sum:
             serverStatus.wiredTiger.cache.pages selected for eviction unable to be evicted because of active children on an internal page
             serverStatus.wiredTiger.cache.pages selected for eviction unable to be evicted because of failure in reconciliation
             serverStatus.wiredTiger.cache.pages selected for eviction unable to be evicted because of a cache overflow item
-ckptMS      first available:
-            serverStatus.wiredTiger.transaction.transaction checkpoint most recent duration for gathering all handles (usecs)
-            serverStatus.wiredTiger.checkpoint.most recent duration for gathering all handles (usecs)
-            then / 1000
+ckptMS      first available, already in milliseconds:
+            serverStatus.wiredTiger.checkpoint.most recent time (msecs)
+            serverStatus.wiredTiger.transaction.transaction checkpoint most recent time (msecs)
 ckptPages/s first available rate:
             serverStatus.wiredTiger.transaction.transaction checkpoint pages written
             serverStatus.wiredTiger.checkpoint-cleanup.pages written
@@ -847,7 +843,7 @@ go test ./...
 Quick smoke test:
 
 ```bash
-./mongodb-ftdcstat diagnostic.data --view summary --interval 43200
+./mongodb-ftdcstat diagnostic.data --view summary --avg 15m
 ```
 
 It embeds the local URL in a `webUI` header section.

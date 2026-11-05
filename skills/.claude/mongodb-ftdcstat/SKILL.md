@@ -29,7 +29,7 @@ If you changed the source in this session, rebuild before running.
 
 ```text
 mongodb-ftdcstat <diagnostic.data-dir> [--view summary|server|wt|system|io|network|repl]
-  [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME]
+  [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME]
   [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
 
@@ -40,8 +40,8 @@ merged as one chronological capture.
 ### Flag rules (the tool rejects violations)
 
 - `--view` defaults to `summary`. `all` and `disk` are **no longer accepted**; use `summary` and `system`.
-- `--interval N` (default 60) is display spacing in seconds. It does **not** aggregate; rates are still computed from adjacent raw samples.
-- `--avg` averages rows into fixed buckets, `1m`–`15m` only, and cannot be combined with an explicit `--interval`. Row `datetime` is then the bucket start.
+- Every FTDC sample is one row (normally one per second). `--interval` is **no longer accepted**; use `--avg` or `--from/--to` to reduce output.
+- `--avg` averages rows into fixed buckets, `1m`–`15m` only. Row `datetime` is then the bucket start.
 - `--from` is inclusive, `--to` is exclusive. Timestamps without a zone are UTC.
 - `--json` cannot be combined with `--web` or `--tui`.
 - `--listen` is only valid with `--web` or `--tui`.
@@ -58,7 +58,7 @@ Start broad, then narrow to the subsystem that looks wrong.
 | Question | Command |
 |---|---|
 | Unknown symptom, first look | `mongodb-ftdcstat DIR --avg 5m \| less -S` |
-| Zoom into an incident | `mongodb-ftdcstat DIR --from 2026-06-04T19:00:00 --to 2026-06-04T20:00:00 --interval 1` |
+| Zoom into an incident | `mongodb-ftdcstat DIR --from 2026-06-04T19:00:00 --to 2026-06-04T20:00:00` |
 | Replication lag / state flips | `--view repl --verbose` |
 | Cache, eviction, checkpoints, tickets, history store | `--view wt --verbose` |
 | CPU, memory, swap, disk latency | `--view system --verbose --pressure` |
@@ -134,4 +134,4 @@ shape, update `README.md` (and `readme_test.go` enforces parts of it), this
 skill's `references/columns.md` (and `references/json-api.md` for JSON/API
 changes), and the tests together. Web routes live in `internal/webui/server.go`. Validate with
 `go test ./...` and the smoke test
-`./mongodb-ftdcstat diagnostic.data --view summary --interval 43200`.
+`./mongodb-ftdcstat diagnostic.data --view summary --avg 15m`.

@@ -1,11 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,20 +19,22 @@ import (
 )
 
 type cliOptions struct {
-	Path        string
-	View        string
-	Interval    int
-	IntervalSet bool
-	Avg         time.Duration
-	Device      string
-	JSON        bool
-	Web         bool
-	TUI         bool
-	Listen      string
-	Verbose     bool
-	Pressure    bool
-	Range       model.TimeRange
+	Path     string
+	View     string
+	Avg      time.Duration
+	Device   string
+	JSON     bool
+	Web      bool
+	TUI      bool
+	Listen   string
+	Verbose  bool
+	Pressure bool
+	Range    model.TimeRange
 }
+
+// sampleIntervalSeconds is the fixed row spacing: every FTDC sample (normally
+// one per second) becomes a row. Use --avg to group rows into time buckets.
+const sampleIntervalSeconds = 1
 
 type captureInput struct {
 	reader       ftdc.NativeReader
@@ -115,7 +117,7 @@ func main() {
 		View:            opts.View,
 		JSON:            opts.JSON,
 		ReportPath:      opts.Path,
-		IntervalSeconds: opts.Interval,
+		IntervalSeconds: sampleIntervalSeconds,
 		Verbose:         opts.Verbose,
 		Pressure:        opts.Pressure,
 		TimeLocation:    timeLocation,
@@ -127,8 +129,8 @@ func main() {
 		metadata:   metadata,
 		avgBucket:  opts.Avg,
 		streamerOpts: derive.Options{
-			IntervalSeconds: opts.Interval,
-			GapThreshold:    time.Duration(max(60, opts.Interval*10)) * time.Second,
+			IntervalSeconds: sampleIntervalSeconds,
+			GapThreshold:    60 * time.Second,
 			Device:          opts.Device,
 			Metadata:        metadata,
 			TimeLocation:    timeLocation,
@@ -142,14 +144,18 @@ func main() {
 		}
 		return
 	}
+	// Every FTDC sample is a row, so buffer stdout instead of issuing one
+	// write syscall per row.
+	out := bufio.NewWriterSize(os.Stdout, 256*1024)
+	run := runStreamingTableOutput
 	if render.NeedsBufferedRows(renderOpts) {
-		if err := runBufferedOutput(os.Stdout, input, warnings, renderOpts); err != nil {
-			printError(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
+		run = runBufferedOutput
 	}
-	if err := runStreamingTableOutput(os.Stdout, input, warnings, renderOpts); err != nil {
+	err = run(out, input, warnings, renderOpts)
+	if flushErr := out.Flush(); err == nil {
+		err = flushErr
+	}
+	if err != nil {
 		printError(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -342,7 +348,7 @@ func emitWarnings(warnings []model.Warning) {
 }
 
 func parseArgs(args []string) (cliOptions, error) {
-	opts := cliOptions{View: "summary", Interval: 60}
+	opts := cliOptions{View: "summary"}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
@@ -391,24 +397,8 @@ func parseArgs(args []string) (cliOptions, error) {
 			opts.View = args[i]
 		case strings.HasPrefix(arg, "--view="):
 			opts.View = strings.TrimPrefix(arg, "--view=")
-		case arg == "--interval":
-			i++
-			if i >= len(args) {
-				return opts, errors.New("--interval requires a value")
-			}
-			n, err := strconv.Atoi(args[i])
-			if err != nil || n <= 0 {
-				return opts, errors.New("--interval must be a positive integer")
-			}
-			opts.Interval = n
-			opts.IntervalSet = true
-		case strings.HasPrefix(arg, "--interval="):
-			n, err := strconv.Atoi(strings.TrimPrefix(arg, "--interval="))
-			if err != nil || n <= 0 {
-				return opts, errors.New("--interval must be a positive integer")
-			}
-			opts.Interval = n
-			opts.IntervalSet = true
+		case arg == "--interval" || strings.HasPrefix(arg, "--interval="):
+			return opts, errors.New("--interval is no longer supported; every FTDC sample is rendered, use --avg DURATION to group rows into time buckets")
 		case arg == "--device":
 			i++
 			if i >= len(args) {
@@ -479,9 +469,6 @@ func parseArgs(args []string) (cliOptions, error) {
 	if opts.Avg > 0 && (opts.Avg < time.Minute || opts.Avg > 15*time.Minute) {
 		return opts, errors.New("--avg duration must be between 1m and 15m")
 	}
-	if opts.Avg > 0 && opts.IntervalSet {
-		return opts, errors.New("--avg cannot be combined with --interval")
-	}
 	switch opts.View {
 	case "server", "wt", "system", "network", "repl", "summary", "io":
 	default:
@@ -511,7 +498,7 @@ func parseTimeArg(value string) (time.Time, error) {
 }
 
 func usage(w *os.File, name string) {
-	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--interval N] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]\n", name)
+	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]\n", name)
 }
 
 func printError(w io.Writer, err error) {

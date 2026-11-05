@@ -15,7 +15,7 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 	for _, want := range []string{
 		"--view server|wt|system|network|repl|summary|io",
 		"Default: `summary`.",
-		"--interval",
+		"`--interval` is no longer supported",
 		"--avg",
 		"--from",
 		"--to",
@@ -91,7 +91,7 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"`--avg` averages derived rows into fixed time buckets for both the terminal",
 		"Valid bucket sizes are `1m` through `15m`.",
 		"`--avg` rejects smaller or larger",
-		"durations, and it cannot be combined with an explicit `--interval`.",
+		"durations.",
 		"Averaging: 5m buckets; datetime is bucket start; values are averaged per bucket.",
 		"`/api/metadata`",
 		"`/api/data`",

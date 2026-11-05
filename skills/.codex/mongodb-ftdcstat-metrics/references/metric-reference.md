@@ -17,8 +17,8 @@ Views:
 
 Important flags:
 
-- `--interval N`: display spacing in seconds. It does not aggregate metrics.
-- `--avg DURATION`: average derived rows into fixed buckets. Valid bucket sizes are `1m` through `15m`; cannot be combined with explicit `--interval`.
+- Every FTDC sample is one row (normally one per second); `--interval` is no longer accepted.
+- `--avg DURATION`: average derived rows into fixed buckets. Valid bucket sizes are `1m` through `15m`.
 - `--from ISO_TIME` / `--to ISO_TIME`: filter samples; `from` is inclusive and `to` is exclusive.
 - `--device DEVICE`: filter disk-derived fields to one device.
 - `--json`: output metadata, warnings, selected view, derived rows, and `rsInfo.members` mapping.
@@ -121,8 +121,8 @@ Default columns:
 - `wtRdMB/s`: bytes read into WT cache per second, MiB/s.
 - `wtWrMB/s`: bytes written from WT cache per second, MiB/s.
 - `evict/s`: pages evicted by eviction server/application/fallback groups per second.
-- `appEvict/s`: application thread eviction/page-read count per second.
-- `ckptMS`: most recent checkpoint duration in milliseconds.
+- `appEvict/s`: pages evicted by application threads per second.
+- `ckptMS`: most recent checkpoint duration in milliseconds (`checkpoint.most recent time (msecs)`).
 - `rdTkt`, `wrTkt`: read/write tickets available.
 
 Verbose columns:
