@@ -54,7 +54,7 @@ func TestStatsCollectorServerView(t *testing.T) {
 	if ins.N != 3 || ins.NullPct != 25 || *ins.Min != 10 || *ins.Max != 30 || *ins.Avg != 20 {
 		t.Fatalf("ins/s=%+v", ins)
 	}
-	if !ins.MaxAt.Equal(time.Unix(2, 0).UTC()) {
+	if ins.MaxAt == nil || *ins.MaxAt != "1970-01-01T00:00:02Z" {
 		t.Fatalf("ins/s maxAt=%v", ins.MaxAt)
 	}
 	wLat := findStatsColumn(t, report, "wLatS")

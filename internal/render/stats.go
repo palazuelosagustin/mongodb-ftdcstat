@@ -174,20 +174,21 @@ func (c *StatsCollector) Rows() int {
 
 // StatsColumn is one numeric column of the stats report.
 type StatsColumn struct {
-	Section    string     `json:"section"`
-	Subsection string     `json:"subsection,omitempty"`
-	Column     string     `json:"column"`
-	N          uint64     `json:"n"`
-	NullPct    float64    `json:"nullPct"`
-	Min        *float64   `json:"min"`
-	Avg        *float64   `json:"avg"`
-	P50        *float64   `json:"p50"`
-	P95        *float64   `json:"p95"`
-	P99        *float64   `json:"p99"`
-	Max        *float64   `json:"max"`
-	MaxAt      *time.Time `json:"maxAt"`
+	Section    string   `json:"section"`
+	Subsection string   `json:"subsection,omitempty"`
+	Column     string   `json:"column"`
+	N          uint64   `json:"n"`
+	NullPct    float64  `json:"nullPct"`
+	Min        *float64 `json:"min"`
+	Avg        *float64 `json:"avg"`
+	P50        *float64 `json:"p50"`
+	P95        *float64 `json:"p95"`
+	P99        *float64 `json:"p99"`
+	Max        *float64 `json:"max"`
+	MaxAt      *string  `json:"maxAt"`
 
-	key string
+	key   string
+	maxAt time.Time
 }
 
 // StatsStateCount is one value of a text column.
@@ -269,7 +270,8 @@ func (c *StatsCollector) columnSummary(section tableSection, display, key string
 	}
 	out.Min, out.Avg, out.P50, out.P95, out.P99, out.Max = summary.Min, summary.Avg, summary.P50, summary.P95, summary.P99, summary.Max
 	if summary.N > 0 {
-		maxAt := summary.MaxAt
+		out.maxAt = summary.MaxAt
+		maxAt := summary.MaxAt.UTC().Format(time.RFC3339)
 		out.MaxAt = &maxAt
 	}
 	return out
@@ -308,7 +310,7 @@ func RenderStatsText(w io.Writer, metadata model.Metadata, report StatsReport, o
 		}
 		maxAt := "-"
 		if col.MaxAt != nil {
-			maxAt = formatRowTime(*col.MaxAt, loc)
+			maxAt = formatRowTime(col.maxAt, loc)
 		}
 		lines = append(lines, []string{
 			section, col.Column, fmt.Sprint(col.N), fmt.Sprintf("%.1f", col.NullPct),
