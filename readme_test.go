@@ -28,7 +28,6 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"--listen",
 		"network  Connection activity and network-establishment diagnostics",
 		"replication | server | network | system | io | wiredTiger",
-		"node1=localhost:27000",
 		"primary.optimeDate - member.optimeDate",
 		"lagS     replication header label",
 		"rsState",
@@ -44,7 +43,6 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"sample time in UTC for FTDC sample rows",
 		"normalized by the available CPU count",
 		"delta(opLatencies.<type>.latency) / delta(opLatencies.<type>.ops) / 1000000",
-		"`--view repl` is a compatibility alias that renders only the `replication`",
 		"`--view summary` is intended for horizontal scrolling",
 		"`--view disk` is no longer supported; use `--view system`.",
 		"`--view all` is no longer supported; use `--view summary`.",
@@ -53,13 +51,17 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"`replication.majLagS` contains the majority commit lag",
 		"hbMs applyOps/s applyBufCnt applyBufMB",
 		"wtCache% dirty% cacheMB dirtyMB updatesMB",
-		"does not apply to `--view summary` or",
 		"`--view network`",
 		"activeConn idleConn totalCreated/s queuedConn rejConn/s dnsSlow/s tlsSlow/s netTimeout/s",
 		"`summary` view also includes the compact network section after",
-		"The header always includes the `network` section and `maxConn`",
-		"network\n  maxConn: <connections.current + connections.available from the first usable serverStatus sample>",
 		"derived during metadata reading",
+		"| Node 1       | localhost:27000 |",
+		"`--view repl` renders only the `replication` section",
+		"It is rejected for\n`--view summary`, `--view server`, and `--view io`",
+		"`Max connections` is `connections.current + connections.available`",
+		"Command Line Options  parsed startup options, one per row",
+		"`From` and `To` are the first and last rendered rows",
+		"--- gap 1495s: rate baseline reset ---",
 		"queuedConn    current queued connections during establishment",
 		"netTimeout/s    = delta(serverStatus.metrics.operation.numConnectionNetworkTimeouts) / elapsed seconds",
 		"`--pressure` is only supported for `--view system`",
@@ -82,41 +84,36 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"unavailable metrics render as `-`",
 		"serverStatus.metrics.repl.apply.ops",
 		"serverStatus.metrics.repl.buffer.apply.count",
-		"`getCmdLineOpts` prints the parsed startup config",
-		"getCmdLineOpts parsed config",
-		"metricsRange actual first and last rendered metric timestamps after filters",
-		"The `metricsRange` section prints the actual first and last rendered metric row",
-		"metricsRange\n  start: 2026-06-18T00:00:00Z\n  end:   2026-06-18T23:00:00Z",
-		"It is printed after `Parameters` and before `webUI` when present",
-		"embeds the local URL in a `webUI` header section",
-		"webUI\n  url: http://127.0.0.1:",
-		"`--web` cannot be combined with `--json`",
+		"`--json` cannot be combined with `--web` or `--tui`.",
 		"`--avg` averages derived rows into fixed time buckets for both the terminal",
 		"Valid bucket sizes are `1m` through `15m`.",
 		"`--avg` rejects smaller or larger",
 		"durations.",
 		"Averaging: 5m buckets; datetime is bucket start; values are averaged per bucket.",
 		"`/api/metadata`",
-		"`/api/data`",
-		"`/app.js`",
-		"`/style.css`",
+		"GET /api/data",
+		"GET /app.js",
+		"GET /style.css",
 		"`headerText`",
-		"monospace `<pre>` block instead of dashboard cards",
-		"`server / Commands` and `server / Latency`",
+		"`server / Commands`",
+		"`server / Latency`",
 		"`system / CPU`, `system / Memory`,",
 		"`system / Disks`, and `system / PSI`",
-		"`wiredTiger / Tickets`, `wiredTiger / Per-second rates`,",
-		"`wiredTiger / Checkpoint time`, `wiredTiger / Percentages`, and",
+		"`wiredTiger / Tickets`",
+		"`wiredTiger / Per-second rates`",
+		"`wiredTiger / Checkpoint time`",
+		"`wiredTiger / Percentages`",
 		"`wiredTiger / MiB`",
-		"Grafana-like tooltip with the exact UTC timestamp",
-		"visible series values at that timestamp",
+		"Grafana-like",
+		"exact UTC timestamp",
+		"visible series values at that",
 		"Large capture detected. Consider using --avg 5m or --from/--to for better browser performance.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("README missing %q", want)
 		}
 	}
-	if !strings.Contains(text, "`--view repl` is a compatibility alias that renders only the `replication`\nsection, including per-node lag columns, `majLagS`, and `rsState`.") {
+	if !strings.Contains(text, "`--view repl` renders only the `replication` section, including per-node lag\ncolumns, `majLagS`, and `rsState`.") {
 		t.Fatal("README should document rsState as part of the replication/repl section")
 	}
 	if strings.Contains(text, "It is also included with\n`--view server`") {
@@ -130,5 +127,11 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 	}
 	if strings.Contains(text, "getCmdLineOpts argv") {
 		t.Fatal("README should document parsed getCmdLineOpts config, not raw argv")
+	}
+	// The header used to be text sections; it is tables now.
+	for _, stale := range []string{"webUI\n  url:", "metricsRange\n  start:", "network\n  maxConn:", "rsInfo\n  set=", "`<pre>` block", "compatibility alias"} {
+		if strings.Contains(text, stale) {
+			t.Fatalf("README still documents the old text header: %q", stale)
+		}
 	}
 }

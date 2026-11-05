@@ -383,9 +383,9 @@ mongodb-ftdcstat diagnostic.data --tui --listen 127.0.0.1:8080
 ### `--verbose`
 
 `--verbose` expands columns for focused views only. It applies to `--view repl`,
-`--view wt`, `--view system`, and `--view network`. It does not apply to `--view summary` or
-`--view io`, which always print the compact rollup for the detected process
-type.
+`--view wt`, `--view system`, and `--view network`. It is rejected for
+`--view summary`, `--view server`, and `--view io`; `summary` and `io` always
+print the compact rollup for the detected process type.
 
 When used with `--view repl`, `--verbose` adds replication apply/buffer metrics
 after `majLagS`:
@@ -408,23 +408,6 @@ For `mongos`, `--view wt` remains the focused pool/executor view for CLI
 compatibility and expands router connection-pool metrics instead of storage
 metrics.
 
-### Reading `mongos` Disk Metrics
-
-For `mongos`, disk columns in `--view system`, `--view summary`, and `--view io` come from
-host-level FTDC `systemMetrics.disks.*` counters. They do not mean `mongos`
-has a local storage engine or persists collection data like `mongod`.
-
-Read them as machine-level IO pressure that may include:
-
-- temporary spill activity from sorts or aggregation stages
-- log writes
-- swap activity
-- IO from other colocated processes
-
-That makes the disk metrics useful for `mongos`, but only as indirect signal.
-High IO can point to spill-heavy router work or host contention; by itself it
-does not prove that `mongos` is writing database files.
-
 When used with `--view system`, `--verbose` adds disk throughput, context switch
 rate, and swap activity after the default system columns:
 
@@ -438,8 +421,6 @@ symptom counters after the default network columns:
 ```text
 activeConn idleConn totalCreated/s queuedConn rejConn/s dnsSlow/s tlsSlow/s netTimeout/s
 ```
-
-Non-verbose output for all existing focused views is unchanged.
 
 Verbose replication metrics:
 
@@ -457,18 +438,8 @@ mongod. FTDC stores them under the `serverStatus.metrics.repl.*` path prefix.
 counter-derived rates. Normal FTDC file rotations preserve continuity; large
 gaps, process restarts, and counter resets suppress the rate.
 
-FTDC path selection adds only the explicit verbose replication paths when
-`--verbose` is enabled for `--view repl`.
-
-For `--view wt --verbose`, FTDC path selection adds only the explicit verbose
-WiredTiger paths needed for the extra columns.
-
-For `--view system --verbose`, FTDC path selection adds only the explicit
-verbose system paths needed for `ctxt/s`, `swapIn/s`, and `swapOut/s`.
-
-For `--view network --verbose`, FTDC path selection adds only the explicit
-network-establishment paths needed for `queuedConn`, `rejConn/s`, `dnsSlow/s`,
-`tlsSlow/s`, and `netTimeout/s`.
+Verbose and pressure columns read their extra FTDC paths only when the flag
+is given, so the default views read less data.
 
 ### `--pressure`
 
@@ -483,9 +454,6 @@ psiCpuSome% psiMemSome% psiMemFull% psiIoSome% psiIoFull%
 error. `--view summary` and `--view io` remain compact and are not expanded by
 `--pressure`.
 
-For `--view system --pressure`, FTDC path selection adds only the explicit PSI
-paths needed for the pressure columns.
-
 `--verbose` and `--pressure` can be used together on `--view system`. The table
 keeps the verbose system columns in the `system` section and appends the PSI
 columns in a separate `pressure` section:
@@ -494,94 +462,149 @@ columns in a separate `pressure` section:
 r/s w/s rkB/s wkB/s awaitS r_awaitS w_awaitS aqu-sz util% user_cpu% system_cpu% iowait% residentMB virtualMB ctxt/s swapIn/s swapOut/s | psiCpuSome% psiMemSome% psiMemFull% psiIoSome% psiIoFull%
 ```
 
+### Reading `mongos` Disk Metrics
+
+For `mongos`, disk columns in `--view system`, `--view summary`, and `--view io` come from
+host-level FTDC `systemMetrics.disks.*` counters. They do not mean `mongos`
+has a local storage engine or persists collection data like `mongod`.
+
+Read them as machine-level IO pressure that may include:
+
+- temporary spill activity from sorts or aggregation stages
+- log writes
+- swap activity
+- IO from other colocated processes
+
+That makes the disk metrics useful for `mongos`, but only as indirect signal.
+High IO can point to spill-heavy router work or host contention; by itself it
+does not prove that `mongos` is writing database files.
+
 ## Header
 
-The static header prints stable environment data:
+Before the metrics, the CLI prints the capture header as two-column tables.
+Tables with nothing to show are omitted. `--json` carries the same facts in
+`metadata` and `rsInfo` (see `--json`).
 
 ```text
-buildInfo version/build/storage/allocator/OpenSSL, plus perconaFeatures on a separate line when present
-rsInfo replica set name and node label to host:port mapping
-hostInfo hostname/OS/kernel/libc/CPU topology/memory/pages/THP/versionString
-getCmdLineOpts parsed config
-configured parameters
-metricsRange actual first and last rendered metric timestamps after filters
-network maxConn metadata derived during metadata reading
+Report                Path, View, Mode (with --stats/--findings), Interval or Average,
+                      Samples, From, To, Process
+Host                  Hostname, OS, Kernel, Architecture, CPU cores, Memory,
+                      Max connections
+Build                 Version, Git version, Modules, Storage engine, Allocator,
+                      OpenSSL, Percona features
+Replica Set           Set name, Member count, Node 1..N
+Command Line Options  parsed startup options, one per row
+Parameters            wtCache plus explicitly configured setParameter values
 ```
 
-`buildInfo.perconaFeatures` is deduplicated while preserving first-seen order
-and is printed on its own line when present.
-
-`rsInfo` maps generic `node1`, `node2`, ..., `nodeN` labels to the real
-replica-set member names. It prints one mapping line per member:
+Example (Build and Command Line Options shortened):
 
 ```text
-rsInfo
-  set=rs0 members:
-    node1=localhost:27000
-    node2=localhost:27001
-    node3=localhost:27002
+Report
++---------+--------------------------------+
+| Field   | Value                          |
++---------+--------------------------------+
+| Path    | testdata/diagnostic.data.27000 |
+| View    | server                         |
+| Average | 15m                            |
+| Samples | 4                              |
+| From    | 2026-06-04T23:00:01Z           |
+| To      | 2026-06-04T23:59:59Z           |
+| Process | mongod                         |
++---------+--------------------------------+
+
+Host
++-----------------+-------------------+
+| Field           | Value             |
++-----------------+-------------------+
+| Hostname        | agusp:27000       |
+| OS              | Ubuntu 24.04      |
+| Kernel          | 6.8.0-110-generic |
+| Architecture    | x86_64            |
+| CPU cores       | 8                 |
+| Memory          | 31 GiB            |
+| Max connections | 409               |
++-----------------+-------------------+
+
+Replica Set
++--------------+-----------------+
+| Field        | Value           |
++--------------+-----------------+
+| Set name     | rs0             |
+| Member count | 3               |
+| Node 1       | localhost:27000 |
+| Node 2       | localhost:27001 |
+| Node 3       | localhost:27002 |
++--------------+-----------------+
+
+Parameters
++---------+-------+
+| Field   | Value |
++---------+-------+
+| wtCache | 0.5   |
++---------+-------+
 ```
 
-Member order prefers `replSetGetConfig` order when available. Otherwise it uses
-first-seen order from `replSetGetStatus.members` or from `serverStatus.repl.hosts`,
+### `Report`
+
+`From` and `To` are the first and last rendered rows after `--from` / `--to`
+filtering, not the requested bounds. `Samples` is the number of rendered rows
+(buckets with `--avg`). `Process` comes from `serverStatus.process` (`mongod`
+or `mongos`); when it is missing, output falls back to the mongod layout and
+prints `mongod`.
+
+### `Host`
+
+`Max connections` is `connections.current + connections.available` from the
+first usable `serverStatus` sample, derived during metadata reading. It prints
+`-` when either field is missing in that sample.
+
+### `Build`
+
+`Percona features` is deduplicated, keeping first-seen order.
+
+### `Replica Set`
+
+Maps the generic `node1`, `node2`, ..., `nodeN` lag column labels (`Node 1`,
+`Node 2`, ...) to the real member names. Member order prefers
+`replSetGetConfig` order when available. Otherwise it uses first-seen order
+from `replSetGetStatus.members` or from `serverStatus.repl.hosts`,
 `serverStatus.repl.passives`, and `serverStatus.repl.arbiters`. The
 `serverStatus.repl` fallback keeps shard data-node reports aligned with regular
 replica-set node reports when FTDC does not include full replica-set config
 metadata. If a new member appears later, it gets the next label, such as
 `node4`; earlier rows show `-` for that member.
 
-`getCmdLineOpts` prints the parsed startup config, flattened into `key=value`
-lines. It does not print raw `argv`, so config-file-driven launches do not show
-the executable path or `-f /path/to/mongod.conf` wrapper arguments there.
+### `Command Line Options`
 
-The `Report` table prints the process kind detected from `serverStatus.process`
-(`mongod` or `mongos`). If it is missing, output falls back to the mongod-style
-report and the header prints `mongod`. PID, uptime, and process start can change
-over a capture, so those details are printed immediately before the first metric
-row and after restarts:
+The parsed startup config from `getCmdLineOpts`, one dotted option per row.
+It does not print raw `argv`, so config-file-driven launches do not show the
+executable path or `-f /path/to/mongod.conf` wrapper arguments there.
+`setParameter` values are listed under `Parameters` instead.
 
-```text
---- mongod process: pid=40955 start=2026-06-07T00:40:13-03:00 ---
---- mongod restart detected: pid=41234 start=2026-06-07T04:12:09-03:00 ---
-```
+### `Parameters`
 
-The process name in these markers follows the same `serverStatus.process` detection used for report layout.
+Always includes the configured WiredTiger cache size when available. Other
+parameters are shown only when explicitly configured, under `setParameter`.
 
-Rate baselines are reset after a detected restart.
+### Process markers
 
-The `Parameters` section always includes configured WiredTiger cache size when
-available. Other parameters are shown only when explicitly configured in startup
-options or config-derived `getCmdLineOpts`, primarily under `setParameter`.
-
-The `metricsRange` section prints the actual first and last rendered metric row
-timestamps after view selection, interval handling, and any `--from` / `--to`
-filtering:
+PID, uptime, and process start can change during a capture, so they are
+printed as markers in the metrics table: before the first row, and wherever a
+restart or a capture gap is detected. The process name follows the same
+`serverStatus.process` detection:
 
 ```text
-metricsRange
-  start: 2026-06-18T00:00:00Z
-  end:   2026-06-18T23:00:00Z
+--- mongod process: pid=524587 start=2026-05-20T22:37:07Z ---
+--- gap 1495s: rate baseline reset ---
+--- mongod restart detected: pid=656311 start=2026-06-04T23:25:26Z ---
 ```
 
-It is printed after `Parameters` and before `webUI` when present, or before the
-metrics table when `--web` is not enabled.
+Rate baselines are reset after a restart or gap, so the first row after one
+often shows `-` for rates. `--findings` lists the same events as a timeline.
 
 Metadata changes across files are normal in rotated diagnostic directories and
-are not printed as warnings by default.
-
-The header always includes:
-
-```text
-network
-  maxConn: <connections.current + connections.available from the first usable serverStatus sample>
-```
-
-`maxConn` is derived during metadata reading from the first usable
-`serverStatus` sample and stored as scalar header metadata. It uses
-`connections.current + connections.available`.
-
-If either connection field is unavailable in that first sample, `maxConn` is
-printed as `-`.
+are not printed as warnings.
 
 ## Column Reference
 
@@ -608,9 +631,9 @@ replication view is `--view repl`.
 
 ```text
 lagS     replication header label; the following node columns are lag values in seconds
-node1    replication lag for rsInfo node1 in seconds, derived
-node2    replication lag for rsInfo node2 in seconds, derived
-nodeN    replication lag for rsInfo nodeN in seconds, derived
+node1    replication lag for Replica Set node1 in seconds, derived
+node2    replication lag for Replica Set node2 in seconds, derived
+nodeN    replication lag for Replica Set nodeN in seconds, derived
 majLagS   majority commit lag in seconds, derived
 rsState    current node replica-set state for that row, derived
 hbMs      average member ping latency in milliseconds, verbose only
@@ -628,7 +651,8 @@ With `--verbose` on `--view repl`, the replication columns continue after
 `majLagS` and `rsState` in the order shown above.
 
 Table column names are always generic `node1..nodeN` labels, never replica-set
-hostnames. The real member names are listed in the `rsInfo` header. The leading
+hostnames. The real member names are listed in the `Replica Set` header
+table (`rsInfo` in JSON). The leading
 `lagS` header marks the node columns as lag values in seconds and is not
 repeated as a data literal on each row.
 
@@ -868,6 +892,8 @@ psi*%        prefer current avg10 from systemMetrics.pressure.<resource>.<scope>
 
 PSI support is Linux-specific and depends on what FTDC captured. When `avg10`
 is present it is used because it is the most useful short-window signal. Older
+MongoDB/PSMDB builds or non-Linux captures may only have `totalMicros` or no
+PSI metrics at all. Missing verbose or pressure metrics render as `-`.
 
 ### `network` View
 
@@ -910,19 +936,14 @@ bandwidth context.
 
 The `summary` view also includes the compact network section after
 server metrics, using the same `activeConn`, `idleConn`, and `totalCreated/s`
-columns. The header always includes the `network` section and `maxConn`
-metadata derived during metadata reading when the first usable `serverStatus`
-sample has both connection counts.
-MongoDB/PSMDB builds or non-Linux captures may only have `totalMicros` or no
-PSI metrics at all. Missing verbose or pressure metrics render as `-`.
-
-Missing fields render as `-` in terminal output and `null` in JSON.
+columns. Compare `activeConn + idleConn` with `Max connections` in the `Host`
+header table (`maxConn` above).
 
 ### `repl` View
 
-`--view repl` is a compatibility alias that renders only the `replication`
-section, including per-node lag columns, `majLagS`, and `rsState`. It does not
-render `server`, `system`, or `wiredTiger` columns.
+`--view repl` renders only the `replication` section, including per-node lag
+columns, `majLagS`, and `rsState`. It does not render `server`, `system`, or
+`wiredTiger` columns. For `mongos`, it renders the `router` section instead.
 
 ## Numeric Formatting
 
@@ -975,18 +996,3 @@ Quick smoke test:
 ```bash
 ./mongodb-ftdcstat diagnostic.data --view summary --avg 15m
 ```
-
-It embeds the local URL in a `webUI` header section.
-
-```text
-webUI
-  url: http://127.0.0.1:8080/
-```
-
-`--web` cannot be combined with `--json`.
-
-
-The local web server exposes `/api/metadata`, `/api/data`, `/api/table`, `/app.js`, and `/style.css`.
-The browser does not render the terminal header as dashboard cards; it keeps the header text in a monospace `<pre>` block instead of dashboard cards for compatibility payloads.
-The Web UI keeps the existing `server / Commands` and `server / Latency` groupings, plus `wiredTiger / Tickets`, `wiredTiger / Per-second rates`, `wiredTiger / Checkpoint time`, `wiredTiger / Percentages`, and `wiredTiger / MiB` when those metric groups are present.
-Hovering a chart shows a Grafana-like tooltip with the exact UTC timestamp and the visible series values at that timestamp.
