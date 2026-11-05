@@ -175,3 +175,23 @@ func TestRenderStatsTextAndJSON(t *testing.T) {
 		t.Fatalf("missing column should be null: %+v", last)
 	}
 }
+
+func TestFormatShare(t *testing.T) {
+	for _, tc := range []struct {
+		pct  float64
+		want string
+	}{
+		{0, "0.0"},
+		{0.04, "<0.1"},
+		{0.05, "0.1"},
+		{25, "25.0"},
+		{99.94, "99.9"},
+		{99.96, ">99.9"},
+		{100 - 90.0/591690*100, ">99.9"},
+		{100, "100.0"},
+	} {
+		if got := formatShare(tc.pct); got != tc.want {
+			t.Fatalf("formatShare(%v)=%q want %q", tc.pct, got, tc.want)
+		}
+	}
+}

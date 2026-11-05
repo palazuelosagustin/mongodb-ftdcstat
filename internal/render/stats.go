@@ -313,7 +313,7 @@ func RenderStatsText(w io.Writer, metadata model.Metadata, report StatsReport, o
 			maxAt = formatRowTime(col.maxAt, loc)
 		}
 		lines = append(lines, []string{
-			section, col.Column, fmt.Sprint(col.N), fmt.Sprintf("%.1f", col.NullPct),
+			section, col.Column, fmt.Sprint(col.N), formatShare(col.NullPct),
 			statsValue(col.Min, col.key), statsAvg(col.Avg, col.key), statsValue(col.P50, col.key),
 			statsValue(col.P95, col.key), statsValue(col.P99, col.key), statsValue(col.Max, col.key), maxAt,
 		})
@@ -323,7 +323,7 @@ func RenderStatsText(w io.Writer, metadata model.Metadata, report StatsReport, o
 	for _, states := range report.States {
 		parts := make([]string, 0, len(states.Values))
 		for _, value := range states.Values {
-			parts = append(parts, fmt.Sprintf("%s %.1f%%", value.Value, value.Pct))
+			parts = append(parts, fmt.Sprintf("%s %s%%", value.Value, formatShare(value.Pct)))
 		}
 		values := strings.Join(parts, ", ")
 		if values == "" {
@@ -332,6 +332,20 @@ func RenderStatsText(w io.Writer, metadata model.Metadata, report StatsReport, o
 		fmt.Fprintf(w, "\n%s %s: %s; %d changes\n", states.Section, states.Column, values, states.Changes)
 	}
 	return nil
+}
+
+// formatShare prints a percentage with one decimal, but never rounds a share
+// that is not exactly 0 or 100 to "0.0" or "100.0": 3 values in 591,690 rows
+// is shown as ">99.9" null, not "100.0", which would read as always empty.
+func formatShare(pct float64) string {
+	s := fmt.Sprintf("%.1f", pct)
+	switch {
+	case s == "0.0" && pct > 0:
+		return "<0.1"
+	case s == "100.0" && pct < 100:
+		return ">99.9"
+	}
+	return s
 }
 
 // statsAvg keeps one decimal for columns that are otherwise printed as whole

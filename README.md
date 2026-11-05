@@ -131,7 +131,9 @@ max at   time of the first row that reached max
 ```
 
 Values use the same formatting as the table, except `avg` keeps one decimal
-for integer columns. Text columns such as `rsState` are summarized below the
+for integer columns. Percentages that are not exactly 0 or 100 never print as
+`0.0` or `100.0`: they print as `<0.1` or `>99.9`, so a column with a handful of
+values is not shown as always empty. JSON keeps the exact values. Text columns such as `rsState` are summarized below the
 table as the share of rows per value plus the number of changes:
 
 ```text
