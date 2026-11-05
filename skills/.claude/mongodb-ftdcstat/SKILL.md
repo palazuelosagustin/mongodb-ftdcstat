@@ -69,15 +69,40 @@ Start broad, then narrow to the subsystem that looks wrong.
 | Which disk is slow | `--view io` (or `--view system --device sda`) |
 | Op rates, latencies, global-lock queue | `--view server` |
 | Connection storms, TLS/DNS slowness, rejections | `--view network --verbose` |
-| Data for further processing | add `--json` |
+| When / how often / how long, exact values | `--json` piped through `jq` (see below) |
 | Visual exploration | `--web --avg 5m` or `--tui --avg 5m` |
 
-On long captures, start with `--stats --findings`: it is short, it reads every
-sample, and `max at` plus the event times give the windows to zoom into with
-`--from/--to`. Add
-`--avg` or `--from/--to` before running web or JSON row output. The output can be very wide: when running it yourself, prefer `--json`
-or a narrow focused view over dumping a full summary table into context, and
-pipe large output to a file you then search.
+### Working order when you run it yourself
+
+Every FTDC sample is a row, so a full capture is about 86,400 rows per day.
+Never print all rows into context. Work in this order:
+
+1. **`--stats --findings`** (text) for the whole capture. It is a few KB, it
+   reads every sample, and `max at` plus the event times give the windows to
+   look at. Then `--view X --stats` for the subsystem that moved.
+2. **`--stats` on a narrower window or view** to compare periods, for example
+   the p99 of `w_awaitS` before and during an incident:
+   `--view io --stats --from ... --to ...`.
+3. **Text rows for a short window** (minutes, not hours) to read the sequence
+   of events: `--view wt --from ... --to ...`.
+4. **`--json` piped through `jq`** for questions about specific values: when,
+   how often, how long, or conditions across columns. Read only the `jq`
+   output, never the raw JSON. For the same rows, JSON costs about 3x the
+   tokens of the text table (every value repeats its key). Use it also when
+   you need exact values: the text table rounds.
+
+```bash
+F="mongodb-ftdcstat DIR --view wt --json --from 2026-06-11T19:00:00 --to 2026-06-11T23:00:00"
+# seconds where application threads evicted pages
+$F | jq -r '.rows[] | select((.wiredTiger["appEvict/s"] // 0) > 0) | [.time, .wiredTiger["appEvict/s"]] | @tsv'
+# how many seconds the cache was at or above 80%
+$F | jq '[.rows[] | select((.wiredTiger["wtCache%"] // 0) >= 80)] | length'
+```
+
+More recipes, including lag per real host and filtering findings events, are
+in [references/json-api.md](references/json-api.md).
+
+For `--web`/`--tui` on long captures, add `--avg` or `--from/--to` first.
 
 ### mongos captures
 
@@ -90,11 +115,11 @@ Same views, different content:
 
 ## Reading output
 
-- **Header first.** `Report` gives the detected process kind. `rsInfo` maps the generic `node1..nodeN` lag columns to real `host:port` members. `metricsRange` is the actual rendered span. `Parameters` shows the configured WT cache size. `network maxConn` = current + available from the first sample.
+- **Header first.** It is a set of tables. `Report` gives the process kind, `Samples`, and `From`/`To` (the actual rendered span). `Host` has CPU cores, memory, and `Max connections` (current + available from the first sample). `Build` has the version. `Replica Set` maps the generic `node1..nodeN` lag columns to real `host:port` members. `Parameters` shows the configured WT cache size. The same facts are in `metadata` and `rsInfo` in JSON.
 - **Restart markers** (`--- mongod restart detected: pid=... ---`) reset rate baselines; the first row after one often shows `-` for rates.
 - **`0` vs `-`:** `0` is a real zero. `-` is missing path, zero denominator, counter reset, or restart boundary. In JSON, missing is `null`.
 - **Formatting:** rates and percentages have 1 decimal; latencies and disk waits (seconds) have 3; raw counters are integers.
-- **Tickets (`rdTkt`/`wrTkt`) are available tickets.** Low numbers mean saturation, high numbers mean idle.
+- **Tickets (`rdTkt`/`wrTkt`) are available tickets.** Before 7.0, low numbers mean saturation. From 7.0 the ticket count is adjusted dynamically, so a low value alone does not mean saturation.
 - **Lag columns:** PRIMARY is `0.0`, negatives are clamped to 0, and `-` means no visible primary or no optime for that member. `majLagS` = lastWrite − majorityWrite.
 - Look for sustained patterns across several rows, not single-sample spikes, and line subsystems up in time (for example, `util%`/`awaitS` rising with `wLatS` and `appEvict/s`).
 
@@ -110,7 +135,7 @@ For `--json` structure, `jq` recipes, and the `--web`/`--tui` HTTP endpoints
 
 - **Replication bottleneck:** sustained `nodeN`/`majLagS` lag, `rsState` changes, high `hbMs`, growing `applyBufCnt`/`applyBufMB`. Check `system` on the lagging member's own capture.
 - **Disk bound:** high `util%`, `awaitS`/`w_awaitS`, growing `aqu-sz`, high `iowait%`, plus rising `wLatS`/`ckptMS`.
-- **WT cache pressure:** `wtCache%` near or above the eviction target (~80%), `dirty%` above ~5% (dirty target) or ~20% (trigger), nonzero `appEvict/s` (application threads doing eviction stall user ops), falling tickets, long `ckptMS`, heavy `hs*` activity.
+- **WT cache pressure:** `wtCache%` near or above the eviction target (~80%), `dirty%` above ~5% (dirty target) or ~20% (trigger), nonzero `appEvict/s` (application threads doing eviction stall user ops), long `ckptMS`, heavy `hs*` activity. Falling tickets count only before 7.0 (see above).
 - **Connection churn:** high `totalCreated/s`, nonzero `queuedConn`/`rejConn/s`, `tlsSlow/s`/`dnsSlow/s`, `netTimeout/s`. Compare `activeConn`+`idleConn` with `maxConn`.
 - **Memory / swap:** `residentMB` growth, nonzero `swapIn/s`/`swapOut/s`, `psiMemSome%`/`psiMemFull%`.
 - **CPU saturation:** `user_cpu%`+`system_cpu%` near 100 (normalized across CPUs), high `psiCpuSome%`, high `ctxt/s`.
