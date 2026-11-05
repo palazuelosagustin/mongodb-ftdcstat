@@ -19,6 +19,7 @@ Important flags:
 
 - Every FTDC sample is one row (normally one per second); `--interval` is no longer accepted.
 - `--avg DURATION`: average derived rows into fixed buckets. Valid bucket sizes are `1m` through `15m`.
+- `--report stats`: per-column n, null%, min, avg, p50/p95/p99 (within 1%), max, and max time instead of rows; not combinable with `--avg`, `--web`, `--tui`.
 - `--from ISO_TIME` / `--to ISO_TIME`: filter samples; `from` is inclusive and `to` is exclusive.
 - `--device DEVICE`: filter disk-derived fields to one device.
 - `--json`: output metadata, warnings, selected view, derived rows, and `rsInfo.members` mapping.

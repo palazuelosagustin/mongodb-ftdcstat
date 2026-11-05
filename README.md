@@ -13,7 +13,7 @@ go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat
 ## Usage
 
 ```bash
-mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
+mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--report stats] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
 
 The input is a directory, not a single FTDC file. The tool discovers
@@ -95,6 +95,76 @@ Averaging: 5m buckets; datetime is bucket start; values are averaged per bucket.
 ```
 
 right before the metrics table. Empty buckets are skipped.
+
+### `--report stats`
+
+Prints per-column statistics for the selected view instead of one row per
+sample. It is a quick first look at a long capture: which columns ever moved,
+how high they went, and when.
+
+```bash
+mongodb-ftdcstat diagnostic.data --report stats
+mongodb-ftdcstat diagnostic.data --report stats --view wt --verbose
+mongodb-ftdcstat diagnostic.data --report stats --view io --from "2026-06-04T19:00:00" --to "2026-06-04T20:00:00"
+mongodb-ftdcstat diagnostic.data --report stats --json
+```
+
+The normal header tables are printed first; the `Report` table shows
+`Mode  report stats`. Then one line per numeric column of the view:
+
+```text
+section     column      n        null%  min   avg   p50   p95   p99   max     max at
+wiredTiger  wtCache%    1150328  0.0    0.0   51.7  53.0  64.7  73.0  85.7    2026-06-11T20:20:12Z
+wiredTiger  appEvict/s  1150322  0.0    0.0   0.0   0.0   0.0   0.0   396.0   2026-06-11T20:20:32Z
+```
+
+```text
+n        rows where the column has a value
+null%    rows where it is missing (-), for example rates after a restart or
+         latencies with no operations
+min avg  exact
+p50 p95 p99
+         estimated with a streaming sketch, within 1% of a real value at
+         that rank
+max      exact
+max at   time of the first row that reached max
+```
+
+Values use the same formatting as the table, except `avg` keeps one decimal
+for integer columns. Text columns such as `rsState` are summarized below the
+table as the share of rows per value plus the number of changes:
+
+```text
+replication rsState: PRIMARY 99.2%, SECONDARY 0.8%; 9 changes
+```
+
+The line above the table counts rows, restarts, and capture gaps (rate
+baseline resets).
+
+Statistics are always computed from every sample, so a short spike is not
+averaged away. `--report stats` reads the capture once and does not keep rows
+in memory.
+
+Rules:
+
+```text
+--report stats works with --view, --verbose, --pressure, --device, --from, --to, and --json
+--report cannot be combined with --avg, --web, or --tui
+stats is currently the only report
+```
+
+With `--json`, the document has `report`, `view`, `metadata`, `rsInfo`,
+`warnings`, `range` (`start`, `end`), `percentileRelativeAccuracy`, and
+`stats`:
+
+```text
+stats.rows, stats.restarts, stats.gaps
+stats.columns[]  section, subsection (io device in --view io), column, n, nullPct,
+                 min, avg, p50, p95, p99, max, maxAt (null when n is 0)
+stats.states[]   section, column, values[] {value, rows, pct}, changes
+```
+
+JSON values are unrounded.
 
 ### `--device DEVICE`
 

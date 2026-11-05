@@ -83,6 +83,9 @@ func buildReportHeader(opts Options) HeaderTable {
 	table := HeaderTable{Title: "Report"}
 	appendHeaderRow(&table.Rows, "Path", opts.ReportPath)
 	appendHeaderRow(&table.Rows, "View", opts.View)
+	if opts.Report != "" {
+		appendHeaderRow(&table.Rows, "Mode", "report "+opts.Report)
+	}
 	if opts.IntervalSeconds > 0 && opts.AvgBucket <= 0 {
 		appendHeaderRow(&table.Rows, "Interval", strconv.Itoa(opts.IntervalSeconds)+"s")
 	}

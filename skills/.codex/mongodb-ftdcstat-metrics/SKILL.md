@@ -36,7 +36,7 @@ go build -o mongodb-ftdcstat ./cmd/ftdcstat
 General form:
 
 ```bash
-mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--listen ADDR] [--verbose] [--pressure]
+mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--avg DURATION] [--report stats] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--listen ADDR] [--verbose] [--pressure]
 ```
 
 Common command recipes:
@@ -80,6 +80,7 @@ Flag rules to preserve in answers:
 - `--view disk` is a compatibility alias for `system`.
 - Every FTDC sample is one row (normally one per second). `--interval` is no longer accepted.
 - `--avg DURATION` averages derived rows into fixed buckets; valid bucket sizes are `1m` through `15m`.
+- `--report stats` prints per-column n, null%, min, avg, p50/p95/p99, max, and max time instead of rows; it cannot be combined with `--avg`, `--web`, or `--tui`.
 - `--from` is inclusive; `--to` is exclusive.
 - `--json` cannot be combined with `--web`.
 - `--verbose` expands only focused views: `repl`, `wt`, `system`, and `network`; it does not expand `summary`.

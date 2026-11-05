@@ -333,3 +333,37 @@ func TestBuildWebLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestParseArgsReportStats(t *testing.T) {
+	for _, args := range [][]string{
+		{"diagnostic.data", "--report", "stats"},
+		{"diagnostic.data", "--report=stats", "--view", "wt", "--verbose", "--json"},
+		{"diagnostic.data", "--report", "stats", "--view", "system", "--pressure", "--from", "2026-06-04T19:00:00"},
+	} {
+		opts, err := parseArgs(args)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if opts.Report != "stats" {
+			t.Fatalf("%v: report=%q", args, opts.Report)
+		}
+	}
+}
+
+func TestParseArgsReportRejections(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"diagnostic.data", "--report"}, "--report requires a value"},
+		{[]string{"diagnostic.data", "--report", "findings"}, "--report must be: stats"},
+		{[]string{"diagnostic.data", "--report", "stats", "--avg", "5m"}, "remove --avg"},
+		{[]string{"diagnostic.data", "--report", "stats", "--web"}, "--report cannot be combined with --web or --tui"},
+		{[]string{"diagnostic.data", "--report", "stats", "--tui"}, "--report cannot be combined with --web or --tui"},
+	} {
+		_, err := parseArgs(tc.args)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%v: err=%v want %q", tc.args, err, tc.want)
+		}
+	}
+}

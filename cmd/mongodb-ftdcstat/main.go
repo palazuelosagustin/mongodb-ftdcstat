@@ -21,6 +21,7 @@ import (
 type cliOptions struct {
 	Path     string
 	View     string
+	Report   string
 	Avg      time.Duration
 	Device   string
 	JSON     bool
@@ -115,6 +116,7 @@ func main() {
 	timeLocation := time.UTC
 	renderOpts := render.Options{
 		View:            opts.View,
+		Report:          opts.Report,
 		JSON:            opts.JSON,
 		ReportPath:      opts.Path,
 		IntervalSeconds: sampleIntervalSeconds,
@@ -148,7 +150,10 @@ func main() {
 	// write syscall per row.
 	out := bufio.NewWriterSize(os.Stdout, 256*1024)
 	run := runStreamingTableOutput
-	if render.NeedsBufferedRows(renderOpts) {
+	switch {
+	case opts.Report == "stats":
+		run = runStatsReport
+	case render.NeedsBufferedRows(renderOpts):
 		run = runBufferedOutput
 	}
 	err = run(out, input, warnings, renderOpts)
@@ -212,6 +217,30 @@ func runStreamingTableOutput(w io.Writer, input captureInput, warnings []model.W
 	}
 	_ = warnings
 	return renderer.Close()
+}
+
+// runStatsReport streams every row into per-column statistics and prints
+// them instead of the rows. It reads the capture once.
+func runStatsReport(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {
+	collector := render.NewStatsCollector(input.metadata, renderOpts)
+	streamer := derive.NewStreamer(input.streamerOpts)
+	streamWarnings, err := input.reader.StreamFiles(input.files, input.readerOpts, func(sample model.MetricSample) error {
+		if row, ok := streamer.Add(sample); ok {
+			collector.Add(row)
+		}
+		return nil
+	})
+	emitWarnings(streamWarnings)
+	if err != nil {
+		return err
+	}
+	renderOpts.MetricsRange = collector.MetricsRange()
+	renderOpts.SampleCount = collector.Rows()
+	report := collector.Report()
+	if renderOpts.JSON {
+		return render.RenderStatsJSON(w, input.metadata, append(warnings, streamWarnings...), report, renderOpts)
+	}
+	return render.RenderStatsText(w, input.metadata, report, renderOpts)
 }
 
 func runBufferedOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {
@@ -409,6 +438,14 @@ func parseArgs(args []string) (cliOptions, error) {
 			opts.View = strings.TrimPrefix(arg, "--view=")
 		case arg == "--interval" || strings.HasPrefix(arg, "--interval="):
 			return opts, errors.New("--interval is no longer supported; every FTDC sample is rendered, use --avg DURATION to group rows into time buckets")
+		case arg == "--report":
+			if i+1 >= len(args) {
+				return opts, errors.New("--report requires a value: stats")
+			}
+			i++
+			opts.Report = args[i]
+		case strings.HasPrefix(arg, "--report="):
+			opts.Report = strings.TrimPrefix(arg, "--report=")
 		case arg == "--device":
 			i++
 			if i >= len(args) {
@@ -470,6 +507,17 @@ func parseArgs(args []string) (cliOptions, error) {
 	if opts.View == "all" {
 		return opts, errors.New("--view all is no longer supported; use --view summary")
 	}
+	if opts.Report != "" {
+		if opts.Report != "stats" {
+			return opts, errors.New("--report must be: stats")
+		}
+		if opts.Web || opts.TUI {
+			return opts, errors.New("--report cannot be combined with --web or --tui")
+		}
+		if opts.Avg > 0 {
+			return opts, errors.New("--report stats uses every sample so peaks are not averaged away; remove --avg")
+		}
+	}
 	if opts.JSON && (opts.Web || opts.TUI) {
 		return opts, errors.New("--json cannot be combined with --web or --tui")
 	}
@@ -508,7 +556,7 @@ func parseTimeArg(value string) (time.Time, error) {
 }
 
 func usage(w *os.File, name string) {
-	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]\n", name)
+	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--report stats] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]\n", name)
 }
 
 func printError(w io.Writer, err error) {

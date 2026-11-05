@@ -58,6 +58,23 @@ $F | jq '{version: .metadata.buildInfo.version, cacheSizeGB: .metadata.getCmdLin
 and by what was set on the command line, so check with `jq '.metadata | keys'`
 before relying on a path.
 
+## `--report stats --json`
+
+A different document: top-level `report` (`"stats"`), `view`, `metadata`,
+`rsInfo`, `warnings`, `range` (`{start, end}`), `percentileRelativeAccuracy`
+(`0.01`), and `stats`:
+
+| Key | Content |
+|---|---|
+| `stats.rows`, `stats.restarts`, `stats.gaps` | Row count and boundary counts |
+| `stats.columns[]` | `{section, subsection?, column, n, nullPct, min, avg, p50, p95, p99, max, maxAt}`; value fields are `null` when `n` is 0; `subsection` is the device in `--view io` |
+| `stats.states[]` | Text columns such as `rsState`: `{section, column, values: [{value, rows, pct}], changes}` |
+
+```bash
+# columns that ever moved, with peak time
+mongodb-ftdcstat DIR --report stats --json | jq -r '.stats.columns[] | select((.max // 0) > 0) | [.section, .column, .p99, .max, .maxAt] | @tsv'
+```
+
 ## `--web` / `--tui` HTTP endpoints
 
 The server binds `127.0.0.1:<random>` (or `--listen ADDR`), prints the URL in

@@ -29,7 +29,7 @@ If you changed the source in this session, rebuild before running.
 
 ```text
 mongodb-ftdcstat <diagnostic.data-dir> [--view summary|server|wt|system|io|network|repl]
-  [--avg DURATION] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME]
+  [--avg DURATION] [--report stats] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME]
   [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
 
@@ -42,6 +42,7 @@ merged as one chronological capture.
 - `--view` defaults to `summary`. `all` and `disk` are **no longer accepted**; use `summary` and `system`.
 - Every FTDC sample is one row (normally one per second). `--interval` is **no longer accepted**; use `--avg` or `--from/--to` to reduce output.
 - `--avg` averages rows into fixed buckets, `1m`–`15m` only. Row `datetime` is then the bucket start.
+- `--report stats` prints per-column n, null%, min, avg, p50/p95/p99, max, and max time for the view instead of rows. It works with `--view`, `--verbose`, `--pressure`, `--device`, `--from/--to`, `--json`; it is rejected with `--avg`, `--web`, `--tui`. Percentiles are within 1%.
 - `--from` is inclusive, `--to` is exclusive. Timestamps without a zone are UTC.
 - `--json` cannot be combined with `--web` or `--tui`.
 - `--listen` is only valid with `--web` or `--tui`.
@@ -57,7 +58,8 @@ Start broad, then narrow to the subsystem that looks wrong.
 
 | Question | Command |
 |---|---|
-| Unknown symptom, first look | `mongodb-ftdcstat DIR --avg 5m \| less -S` |
+| Unknown symptom, first look | `mongodb-ftdcstat DIR --report stats` (then `--view X --report stats` per subsystem) |
+| See the timeline | `mongodb-ftdcstat DIR --avg 5m \| less -S` |
 | Zoom into an incident | `mongodb-ftdcstat DIR --from 2026-06-04T19:00:00 --to 2026-06-04T20:00:00` |
 | Replication lag / state flips | `--view repl --verbose` |
 | Cache, eviction, checkpoints, tickets, history store | `--view wt --verbose` |
@@ -68,8 +70,9 @@ Start broad, then narrow to the subsystem that looks wrong.
 | Data for further processing | add `--json` |
 | Visual exploration | `--web --avg 5m` or `--tui --avg 5m` |
 
-On long captures, add `--avg` or `--from/--to` before running web or JSON
-modes. The output can be very wide: when running it yourself, prefer `--json`
+On long captures, start with `--report stats`: it is short, it reads every
+sample, and `max at` gives the timestamps to zoom into with `--from/--to`. Add
+`--avg` or `--from/--to` before running web or JSON row output. The output can be very wide: when running it yourself, prefer `--json`
 or a narrow focused view over dumping a full summary table into context, and
 pipe large output to a file you then search.
 

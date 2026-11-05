@@ -17,6 +17,8 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"Default: `summary`.",
 		"`--interval` is no longer supported",
 		"--avg",
+		"--report stats",
+		"--report cannot be combined with --avg, --web, or --tui",
 		"--from",
 		"--to",
 		"--verbose",

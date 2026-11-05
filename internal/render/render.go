@@ -21,6 +21,7 @@ type WebLinks struct {
 
 type Options struct {
 	View            string
+	Report          string
 	JSON            bool
 	WebLinks        WebLinks
 	AvgBucket       time.Duration
