@@ -57,7 +57,7 @@ Columns:
 - `node1..nodeN`: per-member replication lag in seconds using `rsInfo` labels.
 - `majLagS`: majority commit lag in seconds.
 - `rsState`: current node replica-set state for the row.
-- Verbose only: `hbMs`, `applyOps/s`, `applyBufCnt`, `applyBufMB`.
+- Verbose only: `hbMs`, `applyOps/s`, `applyBufCnt`, `applyBufMB`, `replNetMB/s`, `oplogMB`, `oplogUsed%`, `flowLagged`, `flowRate`, `flowWaitMS/s`.
 
 Replica state values: `PRIMARY`, `SECONDARY`, `RECOVERING`, `STARTUP2`, `ARBITER`, `UNKNOWN`.
 
@@ -83,6 +83,9 @@ Verbose sources:
 - `applyOps/s`: rate of `serverStatus.metrics.repl.apply.ops`.
 - `applyBufCnt`: `serverStatus.metrics.repl.buffer.apply.count`.
 - `applyBufMB`: `serverStatus.metrics.repl.buffer.apply.sizeBytes / 1024 / 1024`.
+- `replNetMB/s`: rate of `serverStatus.metrics.repl.network.bytes` in MiB/s; nonzero only on members fetching the oplog.
+- `oplogMB`, `oplogUsed%`: `local.oplog.rs.stats.storageStats.size`, and its percent of `maxSize`. FTDC has no first/last oplog entry times, so there is no oplog window.
+- `flowLagged`: `serverStatus.flowControl.isLagged`. `flowRate`: `targetRateLimit`, only while lagged. `flowWaitMS/s`: rate of `flowControl.timeAcquiringMicros` / 1000.
 
 Interpretation hints:
 
@@ -90,6 +93,8 @@ Interpretation hints:
 - High `majLagS` points to majority-commit replication delay and can affect write concern majority.
 - High `hbMs` supports network/host latency as a contributor, not proof by itself.
 - Rising `applyBufCnt`/`applyBufMB` with nonzero lag suggests apply-side backlog.
+- Lag with low `replNetMB/s` on the secondary suggests it is not receiving oplog data (network or sync source).
+- `flowLagged` = 1 with nonzero `flowWaitMS/s` on the primary means flow control is throttling writes.
 
 ## Server columns
 
@@ -147,6 +152,8 @@ Verbose columns:
 - `evictBusy/s`: pages selected for eviction but unable to evict per second.
 - `ckptPages/s`: checkpoint pages written per second.
 - `hsInsert/s`, `hsRead/s`, `hsWriteMB/s`: history store insert/read/write rates.
+- `appEvictMS/s`, `appReadMS/s`: time application threads spent evicting / reading pages from disk, ms per second (1000 = one thread busy the whole second).
+- `logMB/s`, `logSyncMS`: journal bytes written per second and average journal sync duration.
 
 Ticket fallbacks:
 

@@ -1226,3 +1226,68 @@ func TestRequiredPathsVerboseServerAndSystem(t *testing.T) {
 		t.Fatalf("system --verbose paths missing: mounts=%v", hasMounts)
 	}
 }
+
+func TestRowsWiredTigerAppTimeAndJournal(t *testing.T) {
+	const cache, log = "serverStatus.wiredTiger.cache.", "serverStatus.wiredTiger.log."
+	prev := map[string]float64{
+		cache + "application thread time evicting (usecs)":                      1_000_000,
+		cache + "application threads page read from disk to cache time (usecs)": 0,
+		log + "log bytes written":                                               0,
+		log + "log sync time duration (usecs)":                                  10_000,
+		log + "log sync operations":                                             10,
+	}
+	cur := map[string]float64{
+		cache + "application thread time evicting (usecs)":                      1_400_000,
+		cache + "application threads page read from disk to cache time (usecs)": 20_000,
+		log + "log bytes written":                                               4 * 1024 * 1024,
+		log + "log sync time duration (usecs)":                                  40_000,
+		log + "log sync operations":                                             20,
+	}
+	rows := Rows([]model.MetricSample{testSample(0, 0, prev), testSample(2, 0, cur)}, Options{IntervalSeconds: 1})
+	v := rows[0].Values
+	want := map[string]any{
+		"appEvictMS/s": 200.0, // 400ms of eviction over 2s
+		"appReadMS/s":  10.0,
+		"logMB/s":      2.0,
+		"logSyncMS":    3.0, // 30ms over 10 syncs
+	}
+	for key, w := range want {
+		if got := v[key]; got != w {
+			t.Fatalf("%s=%v want %v", key, got, w)
+		}
+	}
+}
+
+func TestRowsReplicationOplogAndFlowControl(t *testing.T) {
+	base := map[string]float64{
+		"local.oplog.rs.stats.storageStats.size":       1024 * 1024 * 1024,
+		"local.oplog.rs.stats.storageStats.maxSize":    4 * 1024 * 1024 * 1024,
+		"serverStatus.flowControl.isLagged":            0,
+		"serverStatus.flowControl.targetRateLimit":     1_000_000_000,
+		"serverStatus.flowControl.timeAcquiringMicros": 0,
+		"serverStatus.metrics.repl.network.bytes":      0,
+	}
+	lagged := map[string]float64{}
+	for k, v := range base {
+		lagged[k] = v
+	}
+	lagged["serverStatus.flowControl.isLagged"] = 1
+	lagged["serverStatus.flowControl.targetRateLimit"] = 500
+	lagged["serverStatus.flowControl.timeAcquiringMicros"] = 300_000
+	lagged["serverStatus.metrics.repl.network.bytes"] = 2 * 1024 * 1024
+
+	rows := Rows([]model.MetricSample{testSample(0, 0, base), testSample(1, 0, base), testSample(2, 0, lagged)}, Options{IntervalSeconds: 1})
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	calm, busy := rows[0].Values, rows[1].Values
+	if calm["oplogMB"] != 1024.0 || calm["oplogUsed%"] != 25.0 || calm["flowLagged"] != 0.0 {
+		t.Fatalf("calm=%v", calm)
+	}
+	if _, ok := calm["flowRate"]; ok {
+		t.Fatalf("flowRate should be missing while not lagged: %v", calm["flowRate"])
+	}
+	if busy["flowLagged"] != 1.0 || busy["flowRate"] != 500.0 || busy["flowWaitMS/s"] != 300.0 || busy["replNetMB/s"] != 2.0 {
+		t.Fatalf("busy=%v", busy)
+	}
+}

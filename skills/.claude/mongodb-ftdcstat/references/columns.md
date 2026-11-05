@@ -35,12 +35,36 @@ hbMs      average member ping latency in milliseconds, verbose only
 applyOps/s   replication apply throughput in ops/sec, verbose only
 applyBufCnt replication apply buffer item count, verbose only
 applyBufMB  replication apply buffer size in MiB, verbose only
+replNetMB/s  oplog data fetched from the sync source, MiB/s, verbose only
+oplogMB     oplog size in MiB, verbose only
+oplogUsed%  oplog size as a percent of its configured maximum, verbose only
+flowLagged  1 while flow control considers the majority commit point lagged, verbose only
+flowRate    flow control target rate (lock acquisitions per second), only while flowLagged is 1, verbose only
+flowWaitMS/s  time operations waited for flow control, ms per second, verbose only
 ```
 
 Sources: `replSetGetStatus.members[].pingMs`,
 `serverStatus.metrics.repl.apply.ops`,
 `serverStatus.metrics.repl.buffer.apply.count`, and
 `serverStatus.metrics.repl.buffer.apply.sizeBytes`.
+
+```text
+replNetMB/s   rate(serverStatus.metrics.repl.network.bytes) / 1024 / 1024
+oplogMB       local.oplog.rs.stats.storageStats.size / 1024 / 1024
+oplogUsed%    local.oplog.rs.stats.storageStats.size / local.oplog.rs.stats.storageStats.maxSize * 100
+flowLagged    serverStatus.flowControl.isLagged
+flowRate      serverStatus.flowControl.targetRateLimit, when isLagged is 1
+flowWaitMS/s  rate(serverStatus.flowControl.timeAcquiringMicros) / 1000
+```
+
+FTDC does not record the first and last oplog entry times, so the oplog
+window (hours of history) cannot be calculated from it. `oplogUsed%` below
+100 means the oplog has not wrapped yet and still holds everything since it
+was created; at about 100 it is full and the oldest entries are being
+removed. Ask for `rs.printReplicationInfo()` output when the window matters.
+`replNetMB/s` is only nonzero on members that fetch the oplog (secondaries).
+`flowRate` is `-` while flow control is not throttling, because MongoDB keeps
+a very large placeholder value there.
 
 With `--verbose` on `--view repl`, the replication columns continue after
 `majLagS` and `rsState` in the order shown above.
@@ -162,7 +186,17 @@ ckptPages/s   checkpoint pages written per second, rate
 hsInsert/s    history store inserts per second, rate
 hsRead/s      history store reads per second, rate
 hsWriteMB/s   history store bytes written per second, converted to MB/s, rate
+appEvictMS/s  time application threads spent evicting pages, ms per second
+appReadMS/s   time application threads spent reading pages from disk into the cache, ms per second
+logMB/s       journal (WiredTiger log) bytes written, MiB per second
+logSyncMS     average journal sync duration, milliseconds
 ```
+
+`appEvictMS/s` and `appReadMS/s` are time user operations spent on cache work
+instead of their own: 1000 ms/s is one thread busy for the whole second.
+Sustained values point to cache pressure (eviction) or a working set larger
+than the cache (reads). `logSyncMS` rising with `w_awaitS` points to slow
+journal storage.
 
 `cacheMB`, `dirtyMB`, and `updatesMB` print as integer MB. `wtRdMB/s`,
 `wtWrMB/s`, and `hsWriteMB/s` print with one decimal. WiredTiger verbose paths
@@ -228,6 +262,12 @@ hsWriteMB/s first available rate:
             serverStatus.wiredTiger.cache.bytes written from cache into history store
             serverStatus.wiredTiger.history store.history store table bytes written
             then / 1024 / 1024
+appEvictMS/s
+            rate(serverStatus.wiredTiger.cache.application thread time evicting (usecs)) / 1000
+appReadMS/s rate(serverStatus.wiredTiger.cache.application threads page read from disk to cache time (usecs)) / 1000
+logMB/s     rate(serverStatus.wiredTiger.log.log bytes written) / 1024 / 1024
+logSyncMS   delta(serverStatus.wiredTiger.log.log sync time duration (usecs))
+            / delta(serverStatus.wiredTiger.log.log sync operations) / 1000
 ```
 
 ### `io` View

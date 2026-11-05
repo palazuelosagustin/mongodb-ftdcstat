@@ -304,6 +304,13 @@ func fillWT(row *Row, c calculator, reset bool) {
 			"serverStatus.wiredTiger.cache.bytes written from cache into history store",
 			"serverStatus.wiredTiger.history store.history store table bytes written",
 		)
+		// Time application threads spend on eviction and on reading pages
+		// from disk, in ms per second of wall time: user operations stalled
+		// on the cache instead of doing their own work.
+		setRateScaledAny(row, "appEvictMS/s", c, 1000, "serverStatus.wiredTiger.cache.application thread time evicting (usecs)")
+		setRateScaledAny(row, "appReadMS/s", c, 1000, "serverStatus.wiredTiger.cache.application threads page read from disk to cache time (usecs)")
+		setRateScaledAny(row, "logMB/s", c, 1024*1024, "serverStatus.wiredTiger.log.log bytes written")
+		setAverage(row, "logSyncMS", c, "serverStatus.wiredTiger.log.log sync time duration (usecs)", "serverStatus.wiredTiger.log.log sync operations", 1000)
 	}
 	if v, ok := c.currentAny(checkpointDurationPaths...); ok {
 		row.Values["ckptMS"] = v
@@ -662,8 +669,22 @@ func fillReplication(row *Row, c calculator, members *replMemberRegistry, reset 
 	}
 	setCurrent(row, "applyBufCnt", c, "serverStatus.metrics.repl.buffer.apply.count")
 	setCurrentMiB(row, "applyBufMB", c, "serverStatus.metrics.repl.buffer.apply.sizeBytes")
+	setCurrentMiB(row, "oplogMB", c, "local.oplog.rs.stats.storageStats.size")
+	if size, ok := c.current("local.oplog.rs.stats.storageStats.size"); ok {
+		if max, ok := c.current("local.oplog.rs.stats.storageStats.maxSize"); ok && max > 0 {
+			row.Values["oplogUsed%"] = size / max * 100
+		}
+	}
+	setCurrent(row, "flowLagged", c, "serverStatus.flowControl.isLagged")
+	// targetRateLimit is a huge sentinel while flow control is not
+	// throttling, so it is only meaningful when isLagged is set.
+	if lagged, ok := c.current("serverStatus.flowControl.isLagged"); ok && lagged > 0 {
+		setCurrent(row, "flowRate", c, "serverStatus.flowControl.targetRateLimit")
+	}
 	if !reset {
 		setRate(row, "applyOps/s", c, "serverStatus.metrics.repl.apply.ops")
+		setRateScaledAny(row, "flowWaitMS/s", c, 1000, "serverStatus.flowControl.timeAcquiringMicros")
+		setRateScaledAny(row, "replNetMB/s", c, 1024*1024, "serverStatus.metrics.repl.network.bytes")
 	}
 	row.Values["rsState"] = rsState(c.cur)
 }

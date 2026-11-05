@@ -63,8 +63,8 @@ Start broad, then narrow to the subsystem that looks wrong.
 | Unknown symptom, first look | `mongodb-ftdcstat DIR --stats --findings` (then `--view X --stats` per subsystem) |
 | See the timeline | `mongodb-ftdcstat DIR --avg 5m \| less -S` |
 | Zoom into an incident | `mongodb-ftdcstat DIR --from 2026-06-04T19:00:00 --to 2026-06-04T20:00:00` |
-| Replication lag / state flips | `--view repl --verbose` |
-| Cache, eviction, checkpoints, tickets, history store | `--view wt --verbose` |
+| Replication lag / state flips, flow control, oplog size | `--view repl --verbose` |
+| Cache, eviction, checkpoints, tickets, history store, journal | `--view wt --verbose` |
 | CPU, steal, memory, swap, disk latency, dbPath disk space | `--view system --verbose --pressure` |
 | Which disk is slow | `--view io` (or `--view system --device sda`) |
 | Op rates, latencies, global-lock queue | `--view server` |
@@ -134,9 +134,10 @@ For `--json` structure, `jq` recipes, and the `--web`/`--tui` HTTP endpoints
 
 ## Diagnostic patterns
 
-- **Replication bottleneck:** sustained `nodeN`/`majLagS` lag, `rsState` changes, high `hbMs`, growing `applyBufCnt`/`applyBufMB`. Check `system` on the lagging member's own capture.
-- **Disk bound:** high `util%`, `awaitS`/`w_awaitS`, growing `aqu-sz`, high `iowait%`, plus rising `wLatS`/`ckptMS`.
-- **WT cache pressure:** `wtCache%` near or above the eviction target (~80%), `dirty%` above ~5% (dirty target) or ~20% (trigger), nonzero `appEvict/s` (application threads doing eviction stall user ops), long `ckptMS`, heavy `hs*` activity. Falling tickets count only before 7.0 (see above).
+- **Replication bottleneck:** sustained `nodeN`/`majLagS` lag, `rsState` changes, high `hbMs`, growing `applyBufCnt`/`applyBufMB`. On the lagging secondary, low `replNetMB/s` with lag means it is not getting oplog data (network, sync source); high `replNetMB/s` with growing apply buffers means it cannot apply fast enough. `flowLagged` = 1 and nonzero `flowWaitMS/s` on the primary mean flow control is throttling writes because the majority commit point lags. Check `system` on the lagging member's own capture.
+- **Oplog:** FTDC has no oplog window (first/last entry times); `oplogUsed%` near 100 only says the oplog is full and wrapping. Ask for `rs.printReplicationInfo()` when the window matters.
+- **Disk bound:** high `util%`, `awaitS`/`w_awaitS`, growing `aqu-sz`, high `iowait%`, plus rising `wLatS`/`ckptMS`. Rising `logSyncMS` (`--view wt --verbose`) points at slow journal storage.
+- **WT cache pressure:** `wtCache%` near or above the eviction target (~80%), `dirty%` above ~5% (dirty target) or ~20% (trigger), nonzero `appEvict/s` and `appEvictMS/s` (application threads doing eviction stall user ops; 1000 ms/s is one thread busy the whole second), high `appReadMS/s` (working set larger than the cache), long `ckptMS`, heavy `hs*` activity. Falling tickets count only before 7.0 (see above).
 - **Connection churn:** high `totalCreated/s`, nonzero `queuedConn`/`rejConn/s`, `tlsSlow/s`/`dnsSlow/s`, `netTimeout/s`. Compare `activeConn`+`idleConn` with `maxConn`.
 - **Memory / swap:** `residentMB` growth, falling `memAvailMB`, nonzero `swapIn/s`/`swapOut/s`, `psiMemSome%`/`psiMemFull%`. A large `heapMB - allocMB` gap is memory tcmalloc holds but mongod does not use; it explains `residentMB` well above the WT cache size.
 - **Disk space:** low or falling `dbFree%` / `dbFreeGB` (`--view system --verbose`). It is the filesystem holding `storage.dbPath`; check it before blaming IO latency on a nearly full disk.

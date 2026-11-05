@@ -159,6 +159,12 @@ var verboseReplicationPaths = []string{
 	"serverStatus.metrics.repl.apply.ops",
 	"serverStatus.metrics.repl.buffer.apply.count",
 	"serverStatus.metrics.repl.buffer.apply.sizeBytes",
+	"serverStatus.metrics.repl.network.bytes",
+	"local.oplog.rs.stats.storageStats.size",
+	"local.oplog.rs.stats.storageStats.maxSize",
+	"serverStatus.flowControl.isLagged",
+	"serverStatus.flowControl.targetRateLimit",
+	"serverStatus.flowControl.timeAcquiringMicros",
 }
 
 var verboseWiredTigerPaths = []string{
@@ -179,6 +185,11 @@ var verboseWiredTigerPaths = []string{
 	"serverStatus.wiredTiger.cache.history store table read calls",
 	"serverStatus.wiredTiger.cache.history store table reads",
 	"serverStatus.wiredTiger.history store.history store table read calls",
+	"serverStatus.wiredTiger.cache.application thread time evicting (usecs)",
+	"serverStatus.wiredTiger.cache.application threads page read from disk to cache time (usecs)",
+	"serverStatus.wiredTiger.log.log bytes written",
+	"serverStatus.wiredTiger.log.log sync time duration (usecs)",
+	"serverStatus.wiredTiger.log.log sync operations",
 	"serverStatus.wiredTiger.cache.bytes written from cache into history store",
 	"serverStatus.wiredTiger.history store.history store table bytes written",
 }

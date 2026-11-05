@@ -548,6 +548,8 @@ func TestBuildDatasetSplitsWiredTigerDashboardSections(t *testing.T) {
 		"wiredTiger / Checkpoint time",
 		"wiredTiger / Percentages",
 		"wiredTiger / MiB",
+		"wiredTiger / App thread time",
+		"wiredTiger / Journal",
 	}
 	if got := sectionNames(dataset.Metadata.Sections); strings.Join(got, "|") != strings.Join(wantSections, "|") {
 		t.Fatalf("sections=%v want=%v", got, wantSections)

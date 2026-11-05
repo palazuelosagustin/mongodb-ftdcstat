@@ -715,6 +715,8 @@ func buildDashboardSections(desc render.ViewDescription, view string) []Section 
 		{name: "wiredTiger / Checkpoint time", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"ckptMS"}},
 		{name: "wiredTiger / Percentages", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"wtCache%", "dirty%"}},
 		{name: "wiredTiger / MiB", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"cacheMB", "dirtyMB", "updatesMB"}},
+		{name: "wiredTiger / App thread time", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"appEvictMS/s", "appReadMS/s"}},
+		{name: "wiredTiger / Journal", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"logMB/s", "logSyncMS"}},
 	}
 
 	usedColumns := map[string]map[string]bool{}
