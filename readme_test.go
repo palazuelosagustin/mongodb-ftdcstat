@@ -4,7 +4,27 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"mongodb-ftdcstat/internal/render"
 )
+
+// TestREADMEDocumentsEveryColumn keeps the README column reference complete:
+// every column --list-columns reports must appear in it.
+func TestREADMEDocumentsEveryColumn(t *testing.T) {
+	data, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, c := range render.ListColumns("") {
+		if c.Column == "node1..nodeN" {
+			continue
+		}
+		if !strings.Contains(text, c.Column) {
+			t.Errorf("README does not mention column %q", c.Column)
+		}
+	}
+}
 
 func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 	data, err := os.ReadFile("README.md")
@@ -17,6 +37,9 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"Default: `summary`.",
 		"`--interval` is no longer supported",
 		"--avg",
+		"### `--columns COL,...`",
+		"### `--list-columns`",
+		"--columns replaces --view; using both is rejected",
 		"`metadata` is a compact summary of the capture",
 		"### `--stats` and `--findings`",
 		"--stats and --findings cannot be combined with --avg, --web, or --tui",

@@ -83,6 +83,9 @@ func buildReportHeader(opts Options) HeaderTable {
 	table := HeaderTable{Title: "Report"}
 	appendHeaderRow(&table.Rows, "Path", opts.ReportPath)
 	appendHeaderRow(&table.Rows, "View", opts.View)
+	if len(opts.Columns) > 0 {
+		appendHeaderRow(&table.Rows, "Columns", strings.Join(opts.Columns, " "))
+	}
 	if opts.Report != "" {
 		appendHeaderRow(&table.Rows, "Mode", opts.Report)
 	}

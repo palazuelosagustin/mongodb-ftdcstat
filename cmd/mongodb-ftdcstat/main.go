@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,19 +20,23 @@ import (
 )
 
 type cliOptions struct {
-	Path     string
-	View     string
-	Stats    bool
-	Findings bool
-	Avg      time.Duration
-	Device   string
-	JSON     bool
-	Web      bool
-	TUI      bool
-	Listen   string
-	Verbose  bool
-	Pressure bool
-	Range    model.TimeRange
+	Path    string
+	View    string
+	viewSet bool
+	Columns []string
+	// ListColumns prints the column catalog and exits; no capture is read.
+	ListColumns bool
+	Stats       bool
+	Findings    bool
+	Avg         time.Duration
+	Device      string
+	JSON        bool
+	Web         bool
+	TUI         bool
+	Listen      string
+	Verbose     bool
+	Pressure    bool
+	Range       model.TimeRange
 }
 
 // sampleIntervalSeconds is the fixed row spacing: every FTDC sample (normally
@@ -91,6 +96,18 @@ func main() {
 		os.Exit(2)
 	}
 
+	if opts.ListColumns {
+		view := ""
+		if opts.viewSet {
+			view = opts.View
+		}
+		if err := render.RenderColumnList(os.Stdout, render.ListColumns(view), opts.JSON); err != nil {
+			printError(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	files, warnings, err := discovery.Discover(opts.Path)
 	if err != nil {
 		printError(os.Stderr, err)
@@ -108,6 +125,9 @@ func main() {
 		os.Exit(1)
 	}
 	readerOpts := ftdc.ReaderOptionsForKind(metadata.ProcessKind(), opts.View, opts.Verbose, opts.Pressure)
+	if len(opts.Columns) > 0 {
+		readerOpts = readerOptionsForColumns(metadata.ProcessKind(), opts.Columns)
+	}
 	readerOpts.TimeRange = opts.Range
 	warnings = append(warnings, metadataWarnings...)
 	for _, warning := range metadataWarnings {
@@ -117,6 +137,7 @@ func main() {
 	timeLocation := time.UTC
 	renderOpts := render.Options{
 		View:            opts.View,
+		Columns:         opts.Columns,
 		Report:          reportMode(opts),
 		JSON:            opts.JSON,
 		ReportPath:      opts.Path,
@@ -220,6 +241,27 @@ func runStreamingTableOutput(w io.Writer, input captureInput, warnings []model.W
 	}
 	_ = warnings
 	return renderer.Close()
+}
+
+// readerOptionsForColumns reads the summary paths plus the verbose (and, for
+// PSI columns, pressure) paths of every view that derives one of the
+// requested columns, so --columns never reads more than it needs.
+func readerOptionsForColumns(processKind string, columns []string) ftdc.ReaderOptions {
+	plan := render.ReadPlanForColumns(columns)
+	out := ftdc.ReaderOptionsForKind(processKind, "summary", false, false)
+	for _, view := range plan.Views {
+		more := ftdc.ReaderOptionsForKind(processKind, view, true, plan.Pressure && view == "system")
+		for path := range more.IncludePaths {
+			out.IncludePaths[path] = true
+		}
+		for _, prefix := range more.IncludePrefixes {
+			if !slices.Contains(out.IncludePrefixes, prefix) {
+				out.IncludePrefixes = append(out.IncludePrefixes, prefix)
+			}
+		}
+		out.VerboseReplication = out.VerboseReplication || more.VerboseReplication
+	}
+	return out
 }
 
 // reportMode is the header "Mode" value for --stats / --findings, or "".
@@ -469,8 +511,20 @@ func parseArgs(args []string) (cliOptions, error) {
 				return opts, errors.New("--view requires a value")
 			}
 			opts.View = args[i]
+			opts.viewSet = true
 		case strings.HasPrefix(arg, "--view="):
 			opts.View = strings.TrimPrefix(arg, "--view=")
+			opts.viewSet = true
+		case arg == "--list-columns":
+			opts.ListColumns = true
+		case arg == "--columns":
+			i++
+			if i >= len(args) {
+				return opts, errors.New("--columns requires a comma-separated list of columns (see --list-columns)")
+			}
+			opts.Columns = append(opts.Columns, strings.Split(args[i], ",")...)
+		case strings.HasPrefix(arg, "--columns="):
+			opts.Columns = append(opts.Columns, strings.Split(strings.TrimPrefix(arg, "--columns="), ",")...)
 		case arg == "--interval" || strings.HasPrefix(arg, "--interval="):
 			return opts, errors.New("--interval is no longer supported; every FTDC sample is rendered, use --avg DURATION to group rows into time buckets")
 		case arg == "--stats":
@@ -528,6 +582,16 @@ func parseArgs(args []string) (cliOptions, error) {
 			opts.Path = arg
 		}
 	}
+	if opts.ListColumns {
+		if opts.viewSet {
+			switch opts.View {
+			case "server", "wt", "system", "network", "repl", "summary", "io":
+			default:
+				return opts, errors.New("--view must be one of server, wt, system, network, repl, summary, io")
+			}
+		}
+		return opts, nil
+	}
 	if opts.Path == "" {
 		return opts, errors.New("path to diagnostic data directory is required")
 	}
@@ -539,6 +603,20 @@ func parseArgs(args []string) (cliOptions, error) {
 	}
 	if opts.View == "all" {
 		return opts, errors.New("--view all is no longer supported; use --view summary")
+	}
+	if opts.Columns != nil {
+		if opts.viewSet {
+			return opts, errors.New("--columns replaces --view; use one or the other")
+		}
+		if opts.Verbose || opts.Pressure {
+			return opts, errors.New("--columns already includes verbose and pressure columns by name; remove --verbose / --pressure")
+		}
+		columns, err := render.ResolveColumns(opts.Columns)
+		if err != nil {
+			return opts, fmt.Errorf("--columns: %w", err)
+		}
+		opts.Columns = columns
+		opts.View = render.ColumnsView
 	}
 	if opts.Stats || opts.Findings {
 		if opts.Web || opts.TUI {
@@ -558,7 +636,7 @@ func parseArgs(args []string) (cliOptions, error) {
 		return opts, errors.New("--avg duration must be between 1m and 15m")
 	}
 	switch opts.View {
-	case "server", "wt", "system", "network", "repl", "summary", "io":
+	case "server", "wt", "system", "network", "repl", "summary", "io", render.ColumnsView:
 	default:
 		return opts, errors.New("--view must be one of server, wt, system, network, repl, summary, io")
 	}
@@ -586,7 +664,8 @@ func parseTimeArg(value string) (time.Time, error) {
 }
 
 func usage(w *os.File, name string) {
-	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]\n", name)
+	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io | --columns COL,...] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]\n", name)
+	fmt.Fprintf(w, "       %s --list-columns [--view VIEW] [--json]\n", name)
 }
 
 func printError(w io.Writer, err error) {

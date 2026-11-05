@@ -36,7 +36,7 @@ go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat
 General form:
 
 ```bash
-mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
+mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io | --columns COL,...] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
 
 Common command recipes:
@@ -87,6 +87,7 @@ Flag rules to preserve in answers:
 - `--view summary` is the default and is intended for horizontal scrolling with `less -S`.
 - `--view all` and `--view disk` are no longer accepted; use `summary` and `system`.
 - Every FTDC sample is one row (normally one per second). `--interval` is no longer accepted.
+- `--columns COL,...` shows only the named columns from any section instead of a view (case-sensitive; rejected with `--view`, `--verbose`, `--pressure`). `mongodb-ftdcstat --list-columns [--view X] [--json]` lists every column with unit, required flag, process kind, and meaning, without a capture.
 - `--avg DURATION` averages derived rows into fixed buckets; valid bucket sizes are `1m` through `15m`.
 - `--stats` prints per-column n, null%, min, avg, p50/p95/p99, max, and max time instead of rows; `--findings` prints a timeline of restarts, gaps, and `rsState` changes (no thresholds). They can be combined and cannot be combined with `--avg`, `--web`, or `--tui`.
 - `--from` is inclusive; `--to` is exclusive.
@@ -102,7 +103,7 @@ Every FTDC sample is a row, so a full capture is about 86,400 rows per day. Neve
 
 1. **`--stats --findings`** (text) for the whole capture. It is a few KB, it reads every sample, and `max at` plus the event times give the windows to look at. Then `--view X --stats` for the subsystem that moved.
 2. **`--stats` on a narrower window or view** to compare periods, for example the p99 of `w_awaitS` before and during an incident: `--view io --stats --from ... --to ...`.
-3. **Text rows for a short window** (minutes, not hours) to read the sequence of events: `--view wt --from ... --to ...`.
+3. **Text rows for a short window** (minutes, not hours) to read the sequence of events. Prefer `--columns` with only the columns you are correlating over a whole view.
 4. **`--json` piped through `jq`** for questions about specific values: when, how often, how long, or conditions across columns. Read only the `jq` output, never the raw JSON. For the same rows, JSON costs about 3x the tokens of the text table (every value repeats its key). Use it also when you need exact values: the text table rounds.
 
 ```bash

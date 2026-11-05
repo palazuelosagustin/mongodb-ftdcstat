@@ -218,7 +218,7 @@ type StatsReport struct {
 func (c *StatsCollector) Report() StatsReport {
 	report := StatsReport{Rows: c.rows, Restarts: c.restarts, Gaps: c.gaps, Columns: []StatsColumn{}, States: []StatsStates{}}
 	rsInfo := derive.ReplSetInfoFromMetadata(c.metadata)
-	layout := layoutForView(c.opts.View, c.nodeLabels(rsInfo), sortedSet(c.devices), c.opts.Verbose, c.opts.Pressure, c.metadata.ProcessKind())
+	layout := layoutFor(c.opts, c.nodeLabels(rsInfo), sortedSet(c.devices), c.metadata.ProcessKind())
 	for _, section := range layout.Sections {
 		for _, key := range layout.Columns[section.Start:section.End] {
 			if key == "time" || key == "lagSLabel" {
@@ -421,6 +421,9 @@ func RenderReportsJSON(w io.Writer, metadata model.Metadata, warnings []model.Wa
 			"start": jsonTime(opts.MetricsRange.Start),
 			"end":   jsonTime(opts.MetricsRange.End),
 		},
+	}
+	if len(opts.Columns) > 0 {
+		payload["columns"] = opts.Columns
 	}
 	if statsReport != nil {
 		reports = append(reports, "stats")

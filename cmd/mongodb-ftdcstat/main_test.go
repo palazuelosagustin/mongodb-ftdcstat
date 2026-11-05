@@ -377,3 +377,46 @@ func TestParseArgsStatsAndFindingsRejections(t *testing.T) {
 		}
 	}
 }
+
+func TestParseArgsColumns(t *testing.T) {
+	opts, err := parseArgs([]string{"diagnostic.data", "--columns", "wtCache%,w_awaitS", "--columns=node2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.View != render.ColumnsView || strings.Join(opts.Columns, " ") != "wtCache% w_awaitS node2" {
+		t.Fatalf("view=%s columns=%v", opts.View, opts.Columns)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"diagnostic.data", "--columns", "wtCache%", "--view", "wt"}, "--columns replaces --view"},
+		{[]string{"diagnostic.data", "--columns", "wtCache%", "--verbose"}, "remove --verbose / --pressure"},
+		{[]string{"diagnostic.data", "--columns", "wtcache%"}, `did you mean "wtCache%"`},
+		{[]string{"diagnostic.data", "--columns"}, "--columns requires"},
+	} {
+		if _, err := parseArgs(tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%v: err=%v want %q", tc.args, err, tc.want)
+		}
+	}
+}
+
+func TestParseArgsListColumnsNeedsNoPath(t *testing.T) {
+	opts, err := parseArgs([]string{"--list-columns", "--view", "wt", "--json"})
+	if err != nil || !opts.ListColumns || opts.View != "wt" {
+		t.Fatalf("opts=%+v err=%v", opts, err)
+	}
+	if _, err := parseArgs([]string{"--list-columns", "--view", "bogus"}); err == nil {
+		t.Fatal("bad --view should fail")
+	}
+}
+
+func TestReaderOptionsForColumnsIncludesOnlyNeededVerbosePaths(t *testing.T) {
+	opts := readerOptionsForColumns("mongod", []string{"appEvictMS/s"})
+	if !opts.IncludePaths["serverStatus.wiredTiger.cache.application thread time evicting (usecs)"] {
+		t.Fatal("wt verbose path missing")
+	}
+	if opts.IncludePaths["serverStatus.transactions.totalAborted"] {
+		t.Fatal("server verbose path should not be read for a wt column")
+	}
+}

@@ -13,7 +13,7 @@ go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat
 ## Usage
 
 ```bash
-mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
+mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io | --columns COL,...] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
 
 The input is a directory, not a single FTDC file. The tool discovers
@@ -65,6 +65,58 @@ old full-width dashed banner lines. The `--view summary` section order is:
 mongod: replication | server | network | system | io | wiredTiger
 mongos: router | server | network | system | io | connPool
 ```
+
+### `--columns COL,...`
+
+Shows only the named columns, from any section, instead of a view:
+
+```bash
+mongodb-ftdcstat diagnostic.data --columns wtCache%,appEvictMS/s,w_awaitS,wLatS --from "2026-06-11T20:15:00" --to "2026-06-11T20:25:00"
+```
+
+```text
+                     | server |    io    |      wiredTiger
+datetime             | wLatS  | w_awaitS | wtCache% appEvictMS/s
+2026-06-11T20:20:08Z |      - |    0.128 |     85.1          0.0
+2026-06-11T20:20:09Z |      - |    0.184 |     76.1        368.9
+```
+
+```text
+names are case-sensitive, as in the table header; see --list-columns
+a wrong name fails with a suggestion: unknown column "wtcache%"; did you mean "wtCache%"?
+sections keep the usual order; columns keep the given order inside a section
+node1..nodeN select replication lag columns
+verbose and pressure columns are included by name; --verbose and --pressure are rejected
+--columns replaces --view; using both is rejected
+the flag can be repeated: --columns a,b --columns c
+```
+
+The `Report` header shows `View  columns` and a `Columns` row. Only the FTDC
+paths the named columns need are read. `--columns` works with `--stats`,
+`--findings`, `--json` (which adds a `columns` key), `--web`, `--tui`,
+`--avg`, `--device`, and `--from` / `--to`.
+
+### `--list-columns`
+
+Prints every column with its section, unit, the flag it needs, the process
+kinds that report it, and its meaning, then exits. No capture path is needed:
+
+```bash
+mongodb-ftdcstat --list-columns
+mongodb-ftdcstat --list-columns --view wt
+mongodb-ftdcstat --list-columns --json
+```
+
+```text
+section     column        unit   needs      process  meaning
+wiredTiger  wtCache%      %      -          mongod   WiredTiger cache used, percent of the configured size
+wiredTiger  appEvictMS/s  ms/s   --verbose  mongod   time application threads spent evicting; 1000 = one thread busy all second
+```
+
+`--view` limits the list to the columns that view shows with any flags
+(on `mongos`, `--view wt` shows `connPool`). `--json` adds each column's
+`source` (FTDC paths and formula) and `views` (for example `wt --verbose`).
+Views and process kinds are computed from the same layouts the tables use.
 
 ### Row spacing
 
@@ -1062,6 +1114,52 @@ header table (`maxConn` above).
 `--view repl` renders only the `replication` section, including per-node lag
 columns, `majLagS`, and `rsState`. It does not render `server`, `system`, or
 `wiredTiger` columns. For `mongos`, it renders the `router` section instead.
+
+### mongos: `router` Section
+
+Shown first in mongos `--view summary` and as the focused mongos `--view repl`.
+
+```text
+nodes       number of hosts in router.connPoolStats.replicaSetPingTimesMillis.*
+pingMS      average of those ping times, milliseconds, over hosts with a real
+            ping time; hosts not pinged yet (mongos reports the int64 maximum,
+            or it divided by 1000) are skipped; `-` when no host has one,
+            for example right after mongos starts
+helloOps/s  rate(router.connPoolStats.replicaSetMonitor.hello.totalCalls)
+helloMS     delta(hello.totalLatencyMicros) / delta(hello.totalCalls) / 1000;
+            `-` when hello.currentlyActive dropped in the interval: replica-set
+            monitoring keeps one long-lived hello open per host, and when those
+            close their whole lifetime lands in totalLatencyMicros at once
+            (minutes or hours), which is not request latency; helloAct
+            (verbose) shows the drop
+ghaOps/s    rate(router.connPoolStats.replicaSetMonitor.getHostAndRefresh.totalCalls)
+ghaMS       delta(getHostAndRefresh.totalLatencyMicros) / delta(getHostAndRefresh.totalCalls) / 1000
+```
+
+### mongos: `connPool` Section
+
+Last section of mongos `--view summary`; mongos `--view wt` renders this section
+(`--verbose` adds the verbose-only columns).
+
+```text
+clientConn     router.connPoolStats.numClientConnections
+scopedConn     router.connPoolStats.numAScopedConnections
+poolInUse      router.connPoolStats.totalInUse
+poolAvail      router.connPoolStats.totalAvailable
+poolCreate/s   rate(router.connPoolStats.totalCreated)
+poolRefresh/s  rate(router.connPoolStats.totalRefreshed)
+taskExec/s     sum of rate(router.networkInterfaceStats.*.executed)
+leased         router.connPoolStats.totalLeased, verbose only
+refreshing     router.connPoolStats.totalRefreshing, verbose only
+helloAct       replicaSetMonitor.hello.currentlyActive, verbose only
+ghaAct         replicaSetMonitor.getHostAndRefresh.currentlyActive, verbose only
+rsmExec/s      rate(router.networkInterfaceStats.ReplicaSetMonitor-TaskExecutor.executed), verbose only
+shardExec/s    rate(router.networkInterfaceStats.ShardRegistry.executed), verbose only
+```
+
+High `poolCreate/s` with low `poolAvail` points to connection-pool churn toward
+shards; rising `helloMS`/`ghaMS` or `pingMS` points to slow or unreachable shard
+members.
 
 ## Numeric Formatting
 

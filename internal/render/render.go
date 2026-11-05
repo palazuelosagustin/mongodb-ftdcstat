@@ -21,6 +21,7 @@ type WebLinks struct {
 
 type Options struct {
 	View            string
+	Columns         []string // --columns selection; replaces the view layout
 	Report          string
 	JSON            bool
 	WebLinks        WebLinks
@@ -85,7 +86,7 @@ func Render(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows
 
 func RenderJSON(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows []derive.Row, opts Options) error {
 	rsInfo := derive.ReplSetInfoFromMetadata(metadata)
-	layout := layoutForView(opts.View, replicationNodeLabels(rsInfo, rows), ioDeviceLabels(rows), opts.Verbose, opts.Pressure, metadata.ProcessKind())
+	layout := layoutFor(opts, replicationNodeLabels(rsInfo, rows), ioDeviceLabels(rows), metadata.ProcessKind())
 	payload := map[string]any{
 		"metadata": MetadataSummary(metadata),
 		"rsInfo":   rsInfoForJSON(rsInfo),
@@ -93,6 +94,9 @@ func RenderJSON(w io.Writer, metadata model.Metadata, warnings []model.Warning, 
 		"view":     opts.View,
 		"avg":      avgPayload(opts.AvgBucket),
 		"rows":     rowsForJSON(rows, layout),
+	}
+	if len(opts.Columns) > 0 {
+		payload["columns"] = opts.Columns
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -110,7 +114,7 @@ func RenderCLITable(w io.Writer, metadata model.Metadata, rows []derive.Row, opt
 func RenderCLIMetrics(w io.Writer, metadata model.Metadata, rows []derive.Row, opts Options) error {
 	rsInfo := derive.ReplSetInfoFromMetadata(metadata)
 	nodeLabels := replicationNodeLabels(rsInfo, rows)
-	layout := layoutForView(opts.View, nodeLabels, ioDeviceLabels(rows), opts.Verbose, opts.Pressure, metadata.ProcessKind())
+	layout := layoutFor(opts, nodeLabels, ioDeviceLabels(rows), metadata.ProcessKind())
 	loc := opts.TimeLocation
 	if loc == nil {
 		loc = time.UTC
@@ -621,7 +625,7 @@ func NewStreamingRenderer(w io.Writer, metadata model.Metadata, opts Options) (*
 	}
 	rsInfo := derive.ReplSetInfoFromMetadata(metadata)
 	nodeLabels := replicationNodeLabels(rsInfo, nil)
-	layout := layoutForView(opts.View, nodeLabels, nil, opts.Verbose, opts.Pressure, metadata.ProcessKind())
+	layout := layoutFor(opts, nodeLabels, nil, metadata.ProcessKind())
 	loc := opts.TimeLocation
 	if loc == nil {
 		loc = time.UTC
@@ -676,7 +680,29 @@ func newStreamingRenderer(w io.Writer, cols []string, sections []tableSection, l
 		loc:              loc,
 		headerRepeatRows: headerRepeatRows,
 	}
+	fitSectionLabels(renderer.widths, sections, renderer.separators)
 	return renderer
+}
+
+// fitSectionLabels widens the last column of any section whose columns are
+// narrower than its label, so the label is not cut (for example "server" over
+// a single wLatS column with --columns).
+func fitSectionLabels(widths []int, sections []tableSection, separators map[int]bool) {
+	for _, section := range sections {
+		start, end := max(section.Start, 0), min(section.End, len(widths))
+		if end <= start {
+			continue
+		}
+		label := section.Name
+		if section.Subsection != "" {
+			label = section.Subsection
+		}
+		positions, _ := columnPositions(widths, separators)
+		span := positions[end-1] + widths[end-1] - positions[start]
+		if span < len(label) {
+			widths[end-1] += len(label) - span
+		}
+	}
 }
 
 func (r *StreamingRenderer) RenderRow(row derive.Row) error {

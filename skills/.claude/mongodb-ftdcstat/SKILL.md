@@ -28,7 +28,7 @@ If you changed the source in this session, rebuild before running.
 ## Usage
 
 ```text
-mongodb-ftdcstat <diagnostic.data-dir> [--view summary|server|wt|system|io|network|repl]
+mongodb-ftdcstat <diagnostic.data-dir> [--view summary|server|wt|system|io|network|repl | --columns COL,...]
   [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME]
   [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
@@ -41,6 +41,8 @@ merged as one chronological capture.
 
 - `--view` defaults to `summary`. `all` and `disk` are **no longer accepted**; use `summary` and `system`.
 - Every FTDC sample is one row (normally one per second). `--interval` is **no longer accepted**; use `--avg` or `--from/--to` to reduce output.
+- `--columns COL,...` shows only the named columns from any section, instead of a view. Names are case-sensitive (a wrong one fails with a suggestion); verbose/pressure columns are included by name, so `--verbose`, `--pressure`, and `--view` are rejected with it. Works with `--stats`, `--findings`, `--json`, `--web`, `--tui`.
+- `mongodb-ftdcstat --list-columns [--view X] [--json]` prints every column's section, unit, required flag, process kind, and meaning without reading a capture; `--json` adds the FTDC source/formula and the views that show it. It is generated from the code, so prefer it over `references/columns.md` when they disagree.
 - `--avg` averages rows into fixed buckets, `1m`–`15m` only. Row `datetime` is then the bucket start.
 - `--stats` prints per-column n, null%, min, avg, p50/p95/p99, max, and max time for the view instead of rows. Percentiles are within 1%.
 - `--findings` prints a timeline of facts: first process, restarts (pid, start), gaps without samples, and `rsState` changes. No thresholds. It does not depend on `--view`.
@@ -70,6 +72,7 @@ Start broad, then narrow to the subsystem that looks wrong.
 | Op rates, latencies, global-lock queue | `--view server` |
 | Ticket queues (7.0+), inefficient queries, write conflicts, transactions | `--view server --verbose` |
 | Connection storms, TLS/DNS slowness, rejections | `--view network --verbose` |
+| A few specific metrics side by side | `--columns wtCache%,appEvictMS/s,w_awaitS,wLatS` (names from `--list-columns`) |
 | When / how often / how long, exact values | `--json` piped through `jq` (see below) |
 | Visual exploration | `--web --avg 5m` or `--tui --avg 5m` |
 
@@ -85,7 +88,9 @@ Never print all rows into context. Work in this order:
    the p99 of `w_awaitS` before and during an incident:
    `--view io --stats --from ... --to ...`.
 3. **Text rows for a short window** (minutes, not hours) to read the sequence
-   of events: `--view wt --from ... --to ...`.
+   of events. Prefer `--columns` with only the 3-6 columns you are correlating
+   (`--columns wtCache%,appEvictMS/s,w_awaitS,wLatS --from ... --to ...`) over a
+   whole view: it is a fraction of the tokens.
 4. **`--json` piped through `jq`** for questions about specific values: when,
    how often, how long, or conditions across columns. Read only the `jq`
    output, never the raw JSON. For the same rows, JSON costs about 3x the
