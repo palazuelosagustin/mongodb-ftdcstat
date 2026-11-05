@@ -49,7 +49,7 @@ merged as one chronological capture.
 - `--json` cannot be combined with `--web` or `--tui`.
 - `--listen` is only valid with `--web` or `--tui`.
 - Every flag also accepts the `--flag=value` form.
-- `--verbose` is only valid with `repl`, `wt`, `system`, `network`; it is rejected for `summary`, `server`, and `io`.
+- `--verbose` is only valid with `server`, `repl`, `wt`, `system`, `network`; it is rejected for `summary` and `io`.
 - `--pressure` (Linux PSI columns) is only valid with `--view system`.
 - `--device` limits disk metrics to one device. `--view io` shows every device side by side.
 - `--web` serves charts and still prints the terminal table. `--tui` serves a scrollable browser table and suppresses the terminal table. Both bind `127.0.0.1` on a random port unless `--listen` is given, and block until Ctrl+C. Run them in the background and give the user the printed URL (`webUI` header section).
@@ -65,9 +65,10 @@ Start broad, then narrow to the subsystem that looks wrong.
 | Zoom into an incident | `mongodb-ftdcstat DIR --from 2026-06-04T19:00:00 --to 2026-06-04T20:00:00` |
 | Replication lag / state flips | `--view repl --verbose` |
 | Cache, eviction, checkpoints, tickets, history store | `--view wt --verbose` |
-| CPU, memory, swap, disk latency | `--view system --verbose --pressure` |
+| CPU, steal, memory, swap, disk latency, dbPath disk space | `--view system --verbose --pressure` |
 | Which disk is slow | `--view io` (or `--view system --device sda`) |
 | Op rates, latencies, global-lock queue | `--view server` |
+| Ticket queues (7.0+), inefficient queries, write conflicts, transactions | `--view server --verbose` |
 | Connection storms, TLS/DNS slowness, rejections | `--view network --verbose` |
 | When / how often / how long, exact values | `--json` piped through `jq` (see below) |
 | Visual exploration | `--web --avg 5m` or `--tui --avg 5m` |
@@ -137,8 +138,12 @@ For `--json` structure, `jq` recipes, and the `--web`/`--tui` HTTP endpoints
 - **Disk bound:** high `util%`, `awaitS`/`w_awaitS`, growing `aqu-sz`, high `iowait%`, plus rising `wLatS`/`ckptMS`.
 - **WT cache pressure:** `wtCache%` near or above the eviction target (~80%), `dirty%` above ~5% (dirty target) or ~20% (trigger), nonzero `appEvict/s` (application threads doing eviction stall user ops), long `ckptMS`, heavy `hs*` activity. Falling tickets count only before 7.0 (see above).
 - **Connection churn:** high `totalCreated/s`, nonzero `queuedConn`/`rejConn/s`, `tlsSlow/s`/`dnsSlow/s`, `netTimeout/s`. Compare `activeConn`+`idleConn` with `maxConn`.
-- **Memory / swap:** `residentMB` growth, nonzero `swapIn/s`/`swapOut/s`, `psiMemSome%`/`psiMemFull%`.
-- **CPU saturation:** `user_cpu%`+`system_cpu%` near 100 (normalized across CPUs), high `psiCpuSome%`, high `ctxt/s`.
+- **Memory / swap:** `residentMB` growth, falling `memAvailMB`, nonzero `swapIn/s`/`swapOut/s`, `psiMemSome%`/`psiMemFull%`. A large `heapMB - allocMB` gap is memory tcmalloc holds but mongod does not use; it explains `residentMB` well above the WT cache size.
+- **Disk space:** low or falling `dbFree%` / `dbFreeGB` (`--view system --verbose`). It is the filesystem holding `storage.dbPath`; check it before blaming IO latency on a nearly full disk.
+- **Ticket queueing (7.0+):** nonzero `rdQ`/`wrQ` with rising `rdQMS`/`wrQMS` means operations wait for admission; line it up with `rLatS`/`wLatS` and WT cache pressure.
+- **Inefficient queries:** `keys/ret` or `docs/ret` in the hundreds or more, nonzero `collScans/s`; a high `docs/ret` with `keys/ret` near 0 is a collection scan. Find the queries with `mongodb-logstat` for that window.
+- **Write contention:** sustained `wrConfl/s`, rising `txnAbort/s`.
+- **CPU saturation:** `user_cpu%`+`system_cpu%` near 100 (normalized across CPUs), high `psiCpuSome%`, high `ctxt/s`, `procsRun` well above the core count. `steal%` above a few percent means the hypervisor is taking CPU from the VM.
 
 ## Answer format
 

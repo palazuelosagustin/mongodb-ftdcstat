@@ -565,8 +565,8 @@ func parseArgs(args []string) (cliOptions, error) {
 	if opts.Pressure && opts.View != "system" {
 		return opts, errors.New("--pressure is only supported for --view system")
 	}
-	if opts.Verbose && opts.View != "repl" && opts.View != "wt" && opts.View != "system" && opts.View != "network" {
-		return opts, errors.New("--verbose is only supported for --view repl, wt, system, or network")
+	if opts.Verbose && opts.View != "repl" && opts.View != "wt" && opts.View != "system" && opts.View != "network" && opts.View != "server" {
+		return opts, errors.New("--verbose is only supported for --view server, repl, wt, system, or network")
 	}
 	return opts, nil
 }

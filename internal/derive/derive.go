@@ -57,6 +57,7 @@ type Streamer struct {
 	replMembers    *replMemberRegistry
 	prev           model.MetricSample
 	havePrev       bool
+	dbPath         string
 }
 
 func Rows(samples []model.MetricSample, opts Options) []Row {
@@ -80,6 +81,7 @@ func NewStreamer(opts Options) *Streamer {
 	return &Streamer{
 		opts:        opts,
 		replMembers: newReplMemberRegistry(opts.Metadata),
+		dbPath:      dbPathFromMetadata(opts.Metadata),
 	}
 }
 
@@ -126,6 +128,8 @@ func (s *Streamer) Add(cur model.MetricSample) (Row, bool) {
 		fillMemoryLatencyConnections(&row, calc, reset)
 		fillNetwork(&row, calc, reset)
 		fillCPU(&row, calc, s.opts, reset)
+		fillSystemExtra(&row, calc, "")
+		fillServerExtra(&row, calc, reset)
 		fillDisk(&row, calc, s.opts.Device, reset)
 		fillMongosRouter(&row, calc, reset)
 	} else {
@@ -134,6 +138,8 @@ func (s *Streamer) Add(cur model.MetricSample) (Row, bool) {
 		fillMemoryLatencyConnections(&row, calc, reset)
 		fillNetwork(&row, calc, reset)
 		fillCPU(&row, calc, s.opts, reset)
+		fillSystemExtra(&row, calc, s.dbPath)
+		fillServerExtra(&row, calc, reset)
 		fillDisk(&row, calc, s.opts.Device, reset)
 		fillReplication(&row, calc, s.replMembers, reset)
 	}
@@ -337,6 +343,102 @@ func setAppEvictRate(row *Row, c calculator) {
 	row.Values["appEvict/s"] = math.Max(attempts-failures, 0)
 }
 
+// fillServerExtra sets the server --verbose columns: admission queues
+// (7.0+), write conflicts, collection scans, query efficiency, transactions.
+func fillServerExtra(row *Row, c calculator, reset bool) {
+	setCurrent(row, "rdQ", c, "serverStatus.queues.execution.read.normalPriority.queueLength")
+	setCurrent(row, "wrQ", c, "serverStatus.queues.execution.write.normalPriority.queueLength")
+	setCurrent(row, "txnActive", c, "serverStatus.transactions.currentActive")
+	if reset {
+		return
+	}
+	setAverage(row, "rdQMS", c, "serverStatus.queues.execution.read.normalPriority.totalTimeQueuedMicros", "serverStatus.queues.execution.read.normalPriority.addedToQueue", 1000)
+	setAverage(row, "wrQMS", c, "serverStatus.queues.execution.write.normalPriority.totalTimeQueuedMicros", "serverStatus.queues.execution.write.normalPriority.addedToQueue", 1000)
+	setRate(row, "wrConfl/s", c, "serverStatus.metrics.operation.writeConflicts")
+	setRate(row, "collScans/s", c, "serverStatus.metrics.queryExecutor.collectionScans.total")
+	setAverage(row, "keys/ret", c, "serverStatus.metrics.queryExecutor.scanned", "serverStatus.metrics.document.returned", 1)
+	setAverage(row, "docs/ret", c, "serverStatus.metrics.queryExecutor.scannedObjects", "serverStatus.metrics.document.returned", 1)
+	setRate(row, "txnCommit/s", c, "serverStatus.transactions.totalCommitted")
+	setRate(row, "txnAbort/s", c, "serverStatus.transactions.totalAborted")
+}
+
+// fillSystemExtra sets the system --verbose host memory, tcmalloc, and
+// dbPath free-space columns. They are gauges, so restarts do not reset them.
+func fillSystemExtra(row *Row, c calculator, dbPath string) {
+	setScaled(row, "memAvailMB", c, "systemMetrics.memory.MemAvailable_kb", 1.0/1024)
+	setScaled(row, "cachedMB", c, "systemMetrics.memory.Cached_kb", 1.0/1024)
+	setScaled(row, "osDirtyMB", c, "systemMetrics.memory.Dirty_kb", 1.0/1024)
+	setScaled(row, "heapMB", c, "serverStatus.tcmalloc.generic.heap_size", 1.0/1024/1024)
+	setScaled(row, "allocMB", c, "serverStatus.tcmalloc.generic.current_allocated_bytes", 1.0/1024/1024)
+	if dbPath == "" {
+		return
+	}
+	mount, ok := mountForPath(c.cur, dbPath)
+	if !ok {
+		return
+	}
+	capacity, capOK := c.cur.Get("systemMetrics.mounts." + mount + ".capacity")
+	available, availOK := c.cur.Get("systemMetrics.mounts." + mount + ".available")
+	if !capOK || !availOK || capacity <= 0 {
+		return
+	}
+	row.Values["dbFree%"] = available / capacity * 100
+	row.Values["dbFreeGB"] = available / 1024 / 1024 / 1024
+}
+
+func setScaled(row *Row, key string, c calculator, path string, scale float64) {
+	if v, ok := c.current(path); ok {
+		row.Values[key] = v * scale
+	}
+}
+
+// mountForPath returns the mount point in the sample's systemMetrics.mounts
+// that holds path: the longest mount point that is path or a parent of it.
+func mountForPath(sample model.MetricSample, path string) (string, bool) {
+	const prefix, suffix = "systemMetrics.mounts.", ".capacity"
+	best := ""
+	found := false
+	for key := range sample.Values {
+		if !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, suffix) {
+			continue
+		}
+		mount := strings.TrimSuffix(strings.TrimPrefix(key, prefix), suffix)
+		if !pathUnderMount(path, mount) {
+			continue
+		}
+		if !found || len(mount) > len(best) {
+			best, found = mount, true
+		}
+	}
+	return best, found
+}
+
+func pathUnderMount(path, mount string) bool {
+	if mount == "/" {
+		return strings.HasPrefix(path, "/")
+	}
+	return path == mount || strings.HasPrefix(path, strings.TrimRight(mount, "/")+"/")
+}
+
+// defaultDBPath is mongod's dbPath when none is configured (Linux).
+const defaultDBPath = "/data/db"
+
+// dbPathFromMetadata returns storage.dbPath from the startup options, the
+// mongod default when it is not set, or "" for mongos (no data files).
+func dbPathFromMetadata(metadata model.Metadata) string {
+	if metadata.ProcessKind() == model.ProcessKindMongos {
+		return ""
+	}
+	cmd, _ := metadata.LatestDoc("getCmdLineOpts")
+	if path := lookupDocString(cmd, "parsed.storage.dbPath"); path != "" {
+		if trimmed := strings.TrimRight(path, "/"); trimmed != "" {
+			return trimmed
+		}
+		return "/"
+	}
+	return defaultDBPath
+}
+
 func fillMemoryLatencyConnections(row *Row, c calculator, reset bool) {
 	setCurrent(row, "residentMB", c, "serverStatus.mem.resident")
 	setCurrent(row, "virtualMB", c, "serverStatus.mem.virtual")
@@ -366,8 +468,8 @@ func fillNetwork(row *Row, c calculator, reset bool) {
 }
 
 func fillCPU(row *Row, c calculator, opts Options, reset bool) {
-	setCurrent(row, "r", c, "systemMetrics.cpu.procs_running")
-	setCurrent(row, "b", c, "systemMetrics.cpu.procs_blocked")
+	setCurrent(row, "procsRun", c, "systemMetrics.cpu.procs_running")
+	setCurrent(row, "procsBlk", c, "systemMetrics.cpu.procs_blocked")
 	if reset {
 		return
 	}

@@ -633,7 +633,7 @@ func TestVerboseSystemViewIncludesVerboseColumns(t *testing.T) {
 	if !strings.Contains(headerText, wantOrder) {
 		t.Fatalf("unexpected system verbose header order:\n%s", headerLine)
 	}
-	for _, col := range []string{"idle_cpu%", "memFreeMB", "memAvailMB", "cachedMB", "swapUsedMB", "psiCpuSome%"} {
+	for _, col := range []string{"idle_cpu%", "memFreeMB", "swapUsedMB", "psiCpuSome%"} {
 		if strings.Contains(headerLine, col) {
 			t.Fatalf("system verbose should not include %s:\n%s", col, out)
 		}

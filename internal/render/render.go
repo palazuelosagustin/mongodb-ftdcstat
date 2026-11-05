@@ -128,7 +128,7 @@ func layoutForView(view string, nodeLabels, deviceLabels []string, verbose, pres
 	if processKind == model.ProcessKindMongos {
 		switch view {
 		case "server":
-			return buildLayout(nil, []namedColumns{{Name: "server", Columns: columnsForSection("server")}})
+			return buildLayout(nil, []namedColumns{{Name: "server", Columns: serverColumns(verbose)}})
 		case "network":
 			return buildLayout(nil, []namedColumns{{Name: "network", Columns: networkColumns(verbose)}})
 		case "system":
@@ -166,7 +166,7 @@ func layoutForView(view string, nodeLabels, deviceLabels []string, verbose, pres
 	replVerbose := verbose && view == "repl"
 	switch view {
 	case "server":
-		return buildLayout(nil, []namedColumns{{Name: "server", Columns: columnsForSection("server")}})
+		return buildLayout(nil, []namedColumns{{Name: "server", Columns: serverColumns(verbose)}})
 	case "wt":
 		return buildLayout(nil, []namedColumns{{Name: "wiredTiger", Columns: wiredTigerColumns(verbose)}})
 	case "network":
@@ -940,7 +940,7 @@ func format(v any, key string) string {
 			return fmt.Sprintf("%.3f", value)
 		case "millis":
 			return fmt.Sprintf("%.1f", value)
-		case "rate", "percent", "mib":
+		case "rate", "percent", "mib", "ratio":
 			return fmt.Sprintf("%.1f", value)
 		case "integer", "bool":
 			return fmt.Sprintf("%.0f", value)
@@ -971,7 +971,7 @@ func isRateOrPercentColumn(key string) bool {
 
 func isIntegerFloatColumn(key string) bool {
 	switch key {
-	case "conn", "qTot", "qRead", "qWrite", "active", "activeR", "activeW", "avail", "connQ", "rdTkt", "wrTkt", "r", "b":
+	case "conn", "qTot", "qRead", "qWrite", "active", "activeR", "activeW", "avail", "connQ", "rdTkt", "wrTkt", "procsRun", "procsBlk":
 		return true
 	}
 	return strings.HasSuffix(key, "MB") && !strings.Contains(key, "/s")

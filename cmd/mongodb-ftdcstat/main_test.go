@@ -175,7 +175,7 @@ func TestParseArgsPressureRequiresSystemView(t *testing.T) {
 
 func TestParseArgsVerboseRequiresFocusedView(t *testing.T) {
 	_, err := parseArgs([]string{"diagnostic.data", "--verbose"})
-	if err == nil || !strings.Contains(err.Error(), "--verbose is only supported for --view repl, wt, system, or network") {
+	if err == nil || !strings.Contains(err.Error(), "--verbose is only supported for --view server, repl, wt, system, or network") {
 		t.Fatalf("err=%v", err)
 	}
 }

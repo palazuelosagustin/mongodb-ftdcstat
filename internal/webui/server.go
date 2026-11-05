@@ -436,7 +436,7 @@ func formatTableValue(value any, format string) string {
 			return "-"
 		}
 		switch format {
-		case "lag", "millis", "rate", "percent", "mib":
+		case "lag", "millis", "rate", "percent", "mib", "ratio":
 			return fmt.Sprintf("%.1f", v)
 		case "seconds":
 			return fmt.Sprintf("%.3f", v)
@@ -701,9 +701,14 @@ func buildDashboardSections(desc render.ViewDescription, view string) []Section 
 	}{
 		{name: "server / Commands", sources: []string{"server"}, defaultInAll: false, columns: []string{"qTot", "ins/s", "qry/s", "upd/s", "del/s", "getm/s", "cmd/s"}},
 		{name: "server / Latency", sources: []string{"server"}, defaultInAll: false, columns: []string{"rLatS", "wLatS", "cLatS"}},
-		{name: "system / CPU", sources: []string{"system"}, defaultInAll: false, columns: []string{"user_cpu%", "system_cpu%", "iowait%", "ctxt/s"}},
-		{name: "system / Memory", sources: []string{"system"}, defaultInAll: false, columns: []string{"residentMB", "virtualMB", "swapIn/s", "swapOut/s"}},
+		{name: "server / Admission", sources: []string{"server"}, defaultInAll: false, columns: []string{"rdQ", "wrQ", "rdQMS", "wrQMS"}},
+		{name: "server / Query efficiency", sources: []string{"server"}, defaultInAll: false, columns: []string{"keys/ret", "docs/ret", "collScans/s", "wrConfl/s"}},
+		{name: "server / Transactions", sources: []string{"server"}, defaultInAll: false, columns: []string{"txnActive", "txnCommit/s", "txnAbort/s"}},
+		{name: "system / CPU", sources: []string{"system"}, defaultInAll: false, columns: []string{"user_cpu%", "system_cpu%", "iowait%", "steal%", "ctxt/s"}},
+		{name: "system / Processes", sources: []string{"system"}, defaultInAll: false, columns: []string{"procsRun", "procsBlk"}},
+		{name: "system / Memory", sources: []string{"system"}, defaultInAll: false, columns: []string{"residentMB", "virtualMB", "memAvailMB", "cachedMB", "osDirtyMB", "heapMB", "allocMB", "swapIn/s", "swapOut/s"}},
 		{name: "system / Disks", sources: []string{"io", "system"}, defaultInAll: false, columns: []string{"r/s", "w/s", "rkB/s", "wkB/s", "awaitS", "r_awaitS", "w_awaitS", "aqu-sz", "util%"}},
+		{name: "system / Disk space", sources: []string{"system"}, defaultInAll: false, columns: []string{"dbFree%", "dbFreeGB"}},
 		{name: "system / PSI", sources: []string{"pressure"}, defaultInAll: true, columns: []string{"psiCpuSome%", "psiMemSome%", "psiMemFull%", "psiIoSome%", "psiIoFull%"}},
 		{name: "wiredTiger / Tickets", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"rdTkt", "wrTkt"}},
 		{name: "wiredTiger / Per-second rates", sources: []string{"wiredTiger"}, defaultInAll: false, columns: []string{"wtRdMB/s", "wtWrMB/s", "evict/s", "appEvict/s", "evictWalks/s", "evictBusy/s", "ckptPages/s", "hsInsert/s", "hsRead/s", "hsWriteMB/s"}},

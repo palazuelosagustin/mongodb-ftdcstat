@@ -1053,3 +1053,176 @@ func TestRowsSetStructuredProcessAndGap(t *testing.T) {
 		t.Fatalf("restart row gap=%v process=%+v", last.GapSeconds, last.Process)
 	}
 }
+
+func metadataWithDBPath(process, dbPath string) model.Metadata {
+	m := model.NewMetadata()
+	parsed := map[string]any{}
+	if dbPath != "" {
+		parsed["storage"] = map[string]any{"dbPath": dbPath}
+	}
+	m.AddDocument(time.Unix(0, 0), "metadata", map[string]any{
+		"serverStatus":   map[string]any{"process": process},
+		"getCmdLineOpts": map[string]any{"parsed": parsed},
+	})
+	return m
+}
+
+func TestRowsServerExtra(t *testing.T) {
+	const q = "serverStatus.queues.execution."
+	prev := map[string]float64{
+		q + "read.normalPriority.totalTimeQueuedMicros":            1000,
+		q + "read.normalPriority.addedToQueue":                     10,
+		q + "write.normalPriority.totalTimeQueuedMicros":           0,
+		q + "write.normalPriority.addedToQueue":                    5,
+		"serverStatus.metrics.operation.writeConflicts":            100,
+		"serverStatus.metrics.queryExecutor.collectionScans.total": 7,
+		"serverStatus.metrics.queryExecutor.scanned":               1000,
+		"serverStatus.metrics.queryExecutor.scannedObjects":        500,
+		"serverStatus.metrics.document.returned":                   100,
+		"serverStatus.transactions.totalCommitted":                 10,
+		"serverStatus.transactions.totalAborted":                   1,
+	}
+	cur := map[string]float64{
+		q + "read.normalPriority.queueLength":                      3,
+		q + "write.normalPriority.queueLength":                     0,
+		q + "read.normalPriority.totalTimeQueuedMicros":            21000,
+		q + "read.normalPriority.addedToQueue":                     14,
+		q + "write.normalPriority.totalTimeQueuedMicros":           0,
+		q + "write.normalPriority.addedToQueue":                    5,
+		"serverStatus.metrics.operation.writeConflicts":            120,
+		"serverStatus.metrics.queryExecutor.collectionScans.total": 9,
+		"serverStatus.metrics.queryExecutor.scanned":               3000,
+		"serverStatus.metrics.queryExecutor.scannedObjects":        4500,
+		"serverStatus.metrics.document.returned":                   200,
+		"serverStatus.transactions.currentActive":                  2,
+		"serverStatus.transactions.totalCommitted":                 30,
+		"serverStatus.transactions.totalAborted":                   3,
+	}
+	rows := Rows([]model.MetricSample{testSample(0, 0, prev), testSample(2, 0, cur)}, Options{IntervalSeconds: 1})
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	v := rows[0].Values
+	want := map[string]any{
+		"rdQ":         3.0,
+		"wrQ":         0.0,
+		"rdQMS":       5.0, // 20000us / 4 queued ops / 1000
+		"wrQMS":       nil, // nothing was queued
+		"wrConfl/s":   10.0,
+		"collScans/s": 1.0,
+		"keys/ret":    20.0,
+		"docs/ret":    40.0,
+		"txnActive":   2.0,
+		"txnCommit/s": 10.0,
+		"txnAbort/s":  1.0,
+	}
+	for key, w := range want {
+		if got := v[key]; got != w {
+			t.Fatalf("%s=%v want %v", key, got, w)
+		}
+	}
+}
+
+func TestRowsServerExtraRatioNeedsReturnedDocuments(t *testing.T) {
+	values := map[string]float64{
+		"serverStatus.metrics.queryExecutor.scanned": 10,
+		"serverStatus.metrics.document.returned":     5,
+	}
+	next := map[string]float64{
+		"serverStatus.metrics.queryExecutor.scanned": 50,
+		"serverStatus.metrics.document.returned":     5,
+	}
+	rows := Rows([]model.MetricSample{testSample(0, 0, values), testSample(1, 0, next)}, Options{IntervalSeconds: 1})
+	if _, ok := rows[0].Values["keys/ret"]; ok {
+		t.Fatalf("keys/ret should be missing when no documents were returned: %v", rows[0].Values["keys/ret"])
+	}
+}
+
+func TestRowsSystemExtra(t *testing.T) {
+	sample := map[string]float64{
+		"systemMetrics.memory.MemAvailable_kb":                  2048 * 1024,
+		"systemMetrics.memory.Cached_kb":                        512 * 1024,
+		"systemMetrics.memory.Dirty_kb":                         1024,
+		"serverStatus.tcmalloc.generic.heap_size":               300 * 1024 * 1024,
+		"serverStatus.tcmalloc.generic.current_allocated_bytes": 200 * 1024 * 1024,
+		"systemMetrics.mounts./.capacity":                       100 << 30,
+		"systemMetrics.mounts./.available":                      90 << 30,
+		"systemMetrics.mounts./data.capacity":                   200 << 30,
+		"systemMetrics.mounts./data.available":                  50 << 30,
+		"systemMetrics.mounts./database.capacity":               400 << 30,
+		"systemMetrics.mounts./database.available":              1 << 30,
+	}
+	rows := Rows([]model.MetricSample{testSample(0, 0, sample), testSample(1, 0, sample)},
+		Options{IntervalSeconds: 1, Metadata: metadataWithDBPath(model.ProcessKindMongod, "/data/db/")})
+	v := rows[0].Values
+	want := map[string]any{
+		"memAvailMB": 2048.0,
+		"cachedMB":   512.0,
+		"osDirtyMB":  1.0,
+		"heapMB":     300.0,
+		"allocMB":    200.0,
+		"dbFree%":    25.0, // /data, not / and not /database
+		"dbFreeGB":   50.0,
+	}
+	for key, w := range want {
+		if got := v[key]; got != w {
+			t.Fatalf("%s=%v want %v", key, got, w)
+		}
+	}
+}
+
+func TestDBPathMountSelection(t *testing.T) {
+	mounts := model.MetricSample{Values: map[string]float64{
+		"systemMetrics.mounts./.capacity":     1,
+		"systemMetrics.mounts./data.capacity": 1,
+	}}
+	for path, want := range map[string]string{
+		"/data/db":   "/data",
+		"/data":      "/data",
+		"/database":  "/",
+		"/var/lib/m": "/",
+	} {
+		if got, ok := mountForPath(mounts, path); !ok || got != want {
+			t.Fatalf("mountForPath(%q)=%q,%v want %q", path, got, ok, want)
+		}
+	}
+	if _, ok := mountForPath(model.MetricSample{Values: map[string]float64{}}, "/data/db"); ok {
+		t.Fatal("no mounts should not match")
+	}
+
+	for _, tc := range []struct {
+		process, dbPath, want string
+	}{
+		{model.ProcessKindMongod, "", defaultDBPath},
+		{model.ProcessKindMongod, "/srv/mongo/", "/srv/mongo"},
+		{model.ProcessKindMongod, "/", "/"},
+		{model.ProcessKindMongos, "/srv/mongo", ""},
+	} {
+		if got := dbPathFromMetadata(metadataWithDBPath(tc.process, tc.dbPath)); got != tc.want {
+			t.Fatalf("dbPathFromMetadata(%s, %q)=%q want %q", tc.process, tc.dbPath, got, tc.want)
+		}
+	}
+}
+
+func TestRequiredPathsVerboseServerAndSystem(t *testing.T) {
+	paths, prefixes := RequiredPathsFor("server", true, false)
+	if !paths["serverStatus.queues.execution.read.normalPriority.queueLength"] || !paths["serverStatus.transactions.totalAborted"] {
+		t.Fatal("server --verbose paths missing")
+	}
+	if paths, _ := RequiredPathsFor("server", false, false); paths["serverStatus.transactions.totalAborted"] {
+		t.Fatal("server without --verbose should not read verbose paths")
+	}
+	for _, p := range prefixes {
+		if p == "systemMetrics.mounts." {
+			t.Fatal("server --verbose should not read mounts")
+		}
+	}
+	paths, prefixes = RequiredPathsFor("system", true, false)
+	hasMounts := false
+	for _, p := range prefixes {
+		hasMounts = hasMounts || p == "systemMetrics.mounts."
+	}
+	if !hasMounts || !paths["systemMetrics.memory.MemAvailable_kb"] {
+		t.Fatalf("system --verbose paths missing: mounts=%v", hasMounts)
+	}
+}

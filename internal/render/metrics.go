@@ -20,6 +20,17 @@ var metricRegistry = []metricDefinition{
 	{Section: "server", Column: "rLatS", Format: "seconds", JSONName: "rLatS"},
 	{Section: "server", Column: "wLatS", Format: "seconds", JSONName: "wLatS"},
 	{Section: "server", Column: "cLatS", Format: "seconds", JSONName: "cLatS"},
+	{Section: "server", Column: "rdQ", Format: "integer", JSONName: "rdQ", VerboseOnly: true},
+	{Section: "server", Column: "wrQ", Format: "integer", JSONName: "wrQ", VerboseOnly: true},
+	{Section: "server", Column: "rdQMS", Format: "millis", JSONName: "rdQMS", VerboseOnly: true},
+	{Section: "server", Column: "wrQMS", Format: "millis", JSONName: "wrQMS", VerboseOnly: true},
+	{Section: "server", Column: "wrConfl/s", Format: "rate", JSONName: "wrConfl/s", VerboseOnly: true},
+	{Section: "server", Column: "collScans/s", Format: "rate", JSONName: "collScans/s", VerboseOnly: true},
+	{Section: "server", Column: "keys/ret", Format: "ratio", JSONName: "keys/ret", VerboseOnly: true},
+	{Section: "server", Column: "docs/ret", Format: "ratio", JSONName: "docs/ret", VerboseOnly: true},
+	{Section: "server", Column: "txnActive", Format: "integer", JSONName: "txnActive", VerboseOnly: true},
+	{Section: "server", Column: "txnCommit/s", Format: "rate", JSONName: "txnCommit/s", VerboseOnly: true},
+	{Section: "server", Column: "txnAbort/s", Format: "rate", JSONName: "txnAbort/s", VerboseOnly: true},
 
 	{Section: "replication", Column: "rsState", Format: "text", JSONName: "rsState"},
 	{Section: "replication", Column: "majLagS", Format: "lag", JSONName: "majLagS"},
@@ -43,6 +54,16 @@ var metricRegistry = []metricDefinition{
 	{Section: "system", Column: "ctxt/s", Format: "rate", JSONName: "ctxt/s", VerboseOnly: true},
 	{Section: "system", Column: "swapIn/s", Format: "rate", JSONName: "swapIn/s", VerboseOnly: true},
 	{Section: "system", Column: "swapOut/s", Format: "rate", JSONName: "swapOut/s", VerboseOnly: true},
+	{Section: "system", Column: "steal%", Format: "percent", JSONName: "steal%", VerboseOnly: true},
+	{Section: "system", Column: "procsRun", Format: "integer", JSONName: "procsRun", VerboseOnly: true},
+	{Section: "system", Column: "procsBlk", Format: "integer", JSONName: "procsBlk", VerboseOnly: true},
+	{Section: "system", Column: "memAvailMB", Format: "integer", JSONName: "memAvailMB", VerboseOnly: true},
+	{Section: "system", Column: "cachedMB", Format: "integer", JSONName: "cachedMB", VerboseOnly: true},
+	{Section: "system", Column: "osDirtyMB", Format: "integer", JSONName: "osDirtyMB", VerboseOnly: true},
+	{Section: "system", Column: "heapMB", Format: "integer", JSONName: "heapMB", VerboseOnly: true},
+	{Section: "system", Column: "allocMB", Format: "integer", JSONName: "allocMB", VerboseOnly: true},
+	{Section: "system", Column: "dbFree%", Format: "percent", JSONName: "dbFree%", VerboseOnly: true},
+	{Section: "system", Column: "dbFreeGB", Format: "mib", JSONName: "dbFreeGB", VerboseOnly: true},
 	{Section: "system", Column: "psiCpuSome%", Format: "percent", JSONName: "psiCpuSome%", PressureOnly: true},
 	{Section: "system", Column: "psiMemSome%", Format: "percent", JSONName: "psiMemSome%", PressureOnly: true},
 	{Section: "system", Column: "psiMemFull%", Format: "percent", JSONName: "psiMemFull%", PressureOnly: true},
@@ -144,7 +165,20 @@ func systemColumns(verbose bool) []string {
 func systemSummaryColumns(verbose bool) []string {
 	cols := []string{"user_cpu%", "system_cpu%", "iowait%", "residentMB", "virtualMB"}
 	if verbose {
-		cols = append(cols, "ctxt/s", "swapIn/s", "swapOut/s")
+		cols = append(cols, "ctxt/s", "swapIn/s", "swapOut/s",
+			"steal%", "procsRun", "procsBlk",
+			"memAvailMB", "cachedMB", "osDirtyMB", "heapMB", "allocMB",
+			"dbFree%", "dbFreeGB")
+	}
+	return cols
+}
+
+func serverColumns(verbose bool) []string {
+	cols := columnsForSection("server")
+	if verbose {
+		cols = append(cols, "rdQ", "wrQ", "rdQMS", "wrQMS",
+			"wrConfl/s", "collScans/s", "keys/ret", "docs/ret",
+			"txnActive", "txnCommit/s", "txnAbort/s")
 	}
 	return cols
 }

@@ -25,7 +25,7 @@ Important flags:
 - `--device DEVICE`: filter disk-derived fields to one device.
 - `--json`: output a compact metadata summary (same facts as the CLI header), warnings, selected view, derived rows, and `rsInfo.members` mapping.
 - `--web`: serve a local plotting UI and still print terminal output. `--tui`: serve a browser table and suppress the terminal table. Neither can combine with `--json`.
-- `--verbose`: expands only `repl`, `wt`, `system`, and `network`; not `summary`.
+- `--verbose`: expands only `server`, `repl`, `wt`, `system`, and `network`; rejected for `summary` and `io`.
 - `--pressure`: only supported for `--view system`; appends Linux PSI columns in a separate pressure section.
 
 ## Header tables
@@ -98,6 +98,16 @@ Columns:
 - `qTot`: global lock queued operations total, raw.
 - `ins/s`, `qry/s`, `upd/s`, `del/s`, `getm/s`, `cmd/s`: operation rates.
 - `rLatS`, `wLatS`, `cLatS`: average read/write/command latency in seconds.
+
+Verbose columns (`--view server --verbose`):
+
+- `rdQ`, `wrQ`: operations waiting for a read/write ticket (7.0+, `queues.execution.*.normalPriority.queueLength`).
+- `rdQMS`, `wrQMS`: average wait of operations that queued for a ticket, ms (7.0+); `-` when nothing queued.
+- `wrConfl/s`: write conflicts per second.
+- `collScans/s`: collection scans per second.
+- `keys/ret`, `docs/ret`: index keys / documents examined per document returned; `-` when nothing was returned. Hundreds or more points to a missing or poor index; high `docs/ret` with `keys/ret` near 0 is a collection scan.
+- `txnActive`, `txnCommit/s`, `txnAbort/s`: transactions running, committed, aborted.
+- On `mongos`, only the transaction columns are reported.
 
 Latency formula:
 
@@ -172,6 +182,11 @@ Verbose columns:
 - `rkB/s`, `wkB/s`: disk read/write throughput in KiB/s.
 - `ctxt/s`: Linux context switches per second from `systemMetrics.cpu.ctxt`.
 - `swapIn/s`, `swapOut/s`: swap activity rates.
+- `steal%`: CPU time stolen by the hypervisor, percent of total CPU time.
+- `procsRun`, `procsBlk`: processes running/runnable and blocked on IO.
+- `memAvailMB`, `cachedMB`, `osDirtyMB`: host available memory, page cache, and dirty page cache, MB.
+- `heapMB`, `allocMB`: tcmalloc heap size and bytes allocated by the process, MB; a large gap is memory held but unused.
+- `dbFree%`, `dbFreeGB`: free space on the filesystem holding `storage.dbPath` (longest captured mount containing it; `/data/db` when unset); `-` on `mongos`.
 
 Disk formulas:
 

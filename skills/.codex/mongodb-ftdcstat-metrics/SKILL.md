@@ -72,6 +72,9 @@ mongodb-ftdcstat diagnostic.data --view system --device sda
 # every disk side by side
 mongodb-ftdcstat diagnostic.data --view io
 
+# ticket queues (7.0+), query efficiency, write conflicts, transactions
+mongodb-ftdcstat diagnostic.data --view server --verbose
+
 # replica-set lag and state
 mongodb-ftdcstat diagnostic.data --view repl --verbose
 
@@ -88,7 +91,7 @@ Flag rules to preserve in answers:
 - `--stats` prints per-column n, null%, min, avg, p50/p95/p99, max, and max time instead of rows; `--findings` prints a timeline of restarts, gaps, and `rsState` changes (no thresholds). They can be combined and cannot be combined with `--avg`, `--web`, or `--tui`.
 - `--from` is inclusive; `--to` is exclusive.
 - `--json` cannot be combined with `--web` or `--tui`.
-- `--verbose` expands only focused views: `repl`, `wt`, `system`, and `network`; it does not expand `summary`.
+- `--verbose` expands only focused views: `server`, `repl`, `wt`, `system`, and `network`; it is rejected for `summary` and `io`.
 - `--pressure` is only valid with `--view system`; with `--verbose`, PSI columns are appended as a separate `pressure` section.
 
 When advising a command, pick the narrowest command that answers the question. Use `--stats --findings` first for unknown symptoms, then focused views for follow-up: `wt` for cache/eviction/checkpoint/tickets/history store, `system` for CPU/disk/memory/swap/PSI, `io` to compare disks, `repl` for lag/state, `network` for connection behavior, and `server` for operation rates, latency, and queues.

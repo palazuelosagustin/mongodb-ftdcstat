@@ -296,21 +296,27 @@ func TestBuildDatasetSplitsSystemDashboardSections(t *testing.T) {
 		TimeLocation: time.UTC,
 	})
 
-	wantSections := []string{"system / CPU", "system / Memory", "system / Disks", "system / PSI"}
+	wantSections := []string{"system / CPU", "system / Processes", "system / Memory", "system / Disks", "system / Disk space", "system / PSI"}
 	if got := sectionNames(dataset.Metadata.Sections); strings.Join(got, "|") != strings.Join(wantSections, "|") {
 		t.Fatalf("sections=%v want=%v", got, wantSections)
 	}
 
-	if got := MetricNames(dataset.Metadata.Sections[0]); strings.Join(got, "|") != strings.Join([]string{"ctxt/s", "iowait%", "system_cpu%", "user_cpu%"}, "|") {
+	if got := MetricNames(dataset.Metadata.Sections[0]); strings.Join(got, "|") != strings.Join([]string{"ctxt/s", "iowait%", "steal%", "system_cpu%", "user_cpu%"}, "|") {
 		t.Fatalf("cpu metrics=%v", got)
 	}
-	if got := MetricNames(dataset.Metadata.Sections[1]); strings.Join(got, "|") != strings.Join([]string{"residentMB", "swapIn/s", "swapOut/s", "virtualMB"}, "|") {
+	if got := MetricNames(dataset.Metadata.Sections[1]); strings.Join(got, "|") != strings.Join([]string{"procsBlk", "procsRun"}, "|") {
+		t.Fatalf("process metrics=%v", got)
+	}
+	if got := MetricNames(dataset.Metadata.Sections[2]); strings.Join(got, "|") != strings.Join([]string{"allocMB", "cachedMB", "heapMB", "memAvailMB", "osDirtyMB", "residentMB", "swapIn/s", "swapOut/s", "virtualMB"}, "|") {
 		t.Fatalf("memory metrics=%v", got)
 	}
-	if got := MetricNames(dataset.Metadata.Sections[2]); strings.Join(got, "|") != strings.Join([]string{"aqu-sz", "awaitS", "r/s", "r_awaitS", "rkB/s", "util%", "w/s", "w_awaitS", "wkB/s"}, "|") {
+	if got := MetricNames(dataset.Metadata.Sections[3]); strings.Join(got, "|") != strings.Join([]string{"aqu-sz", "awaitS", "r/s", "r_awaitS", "rkB/s", "util%", "w/s", "w_awaitS", "wkB/s"}, "|") {
 		t.Fatalf("disk metrics=%v", got)
 	}
-	if got := MetricNames(dataset.Metadata.Sections[3]); strings.Join(got, "|") != strings.Join([]string{"psiCpuSome%", "psiIoFull%", "psiIoSome%", "psiMemFull%", "psiMemSome%"}, "|") {
+	if got := MetricNames(dataset.Metadata.Sections[4]); strings.Join(got, "|") != strings.Join([]string{"dbFree%", "dbFreeGB"}, "|") {
+		t.Fatalf("disk space metrics=%v", got)
+	}
+	if got := MetricNames(dataset.Metadata.Sections[5]); strings.Join(got, "|") != strings.Join([]string{"psiCpuSome%", "psiIoFull%", "psiIoSome%", "psiMemFull%", "psiMemSome%"}, "|") {
 		t.Fatalf("psi metrics=%v", got)
 	}
 

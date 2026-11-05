@@ -85,9 +85,46 @@ wLatS    average write latency in seconds, derived
 cLatS    average command latency in seconds, derived
 ```
 
-The old scalar `server.lagS` column was removed to avoid duplicating the
-per-member `replication` section. Connection activity now lives in the
-`network` section via `activeConn`, `idleConn`, and `totalCreated/s`.
+Verbose-only columns for `--view server --verbose`:
+
+```text
+rdQ          operations waiting for a read ticket, raw (7.0+)
+wrQ          operations waiting for a write ticket, raw (7.0+)
+rdQMS        average wait of operations that queued for a read ticket, milliseconds (7.0+)
+wrQMS        average wait of operations that queued for a write ticket, milliseconds (7.0+)
+wrConfl/s    write conflicts per second, rate
+collScans/s  collection scans per second, rate
+keys/ret     index keys examined per document returned, ratio
+docs/ret     documents examined per document returned, ratio
+txnActive    transactions currently running an operation, raw
+txnCommit/s  transactions committed per second, rate
+txnAbort/s   transactions aborted per second, rate
+```
+
+Server verbose sources:
+
+```text
+rdQ, wrQ        serverStatus.queues.execution.<read|write>.normalPriority.queueLength
+rdQMS, wrQMS    delta(queues.execution.<read|write>.normalPriority.totalTimeQueuedMicros)
+                / delta(queues.execution.<read|write>.normalPriority.addedToQueue) / 1000
+wrConfl/s       rate(serverStatus.metrics.operation.writeConflicts)
+collScans/s     rate(serverStatus.metrics.queryExecutor.collectionScans.total)
+keys/ret        delta(serverStatus.metrics.queryExecutor.scanned)
+                / delta(serverStatus.metrics.document.returned)
+docs/ret        delta(serverStatus.metrics.queryExecutor.scannedObjects)
+                / delta(serverStatus.metrics.document.returned)
+txnActive       serverStatus.transactions.currentActive
+txnCommit/s     rate(serverStatus.transactions.totalCommitted)
+txnAbort/s      rate(serverStatus.transactions.totalAborted)
+```
+
+The admission-queue columns need MongoDB 7.0 or later (`queues.execution`);
+older versions show `-`. `rdQMS` / `wrQMS` are `-` in rows where no operation
+queued, and `keys/ret` / `docs/ret` are `-` in rows where no document was
+returned. High `keys/ret` or `docs/ret` (hundreds or more) points to queries
+that examine far more than they return, typically a missing or poor index; a
+high `docs/ret` with `keys/ret` near 0 is a collection scan. On `mongos`,
+only the transaction columns are reported; the others show `-`.
 
 Latency formula:
 
@@ -229,6 +266,16 @@ wkB/s        disk write throughput in KiB/s, derived rate
 ctxt/s       context switches per second, derived rate
 swapIn/s     swap-ins per second, derived rate
 swapOut/s    swap-outs per second, derived rate
+steal%       CPU time stolen by the hypervisor, percent of total CPU time
+procsRun     processes running or runnable, raw
+procsBlk     processes blocked waiting for IO, raw
+memAvailMB   host memory available for new allocations, MB
+cachedMB     host page cache, MB
+osDirtyMB    host page cache waiting to be written to disk, MB
+heapMB       tcmalloc heap size of the process, MB
+allocMB      bytes allocated by the process from the tcmalloc heap, MB
+dbFree%      free space on the filesystem holding storage.dbPath, percent
+dbFreeGB     free space on the filesystem holding storage.dbPath, GiB
 ```
 
 Pressure-only columns for `--view system --pressure`:
@@ -271,7 +318,25 @@ System verbose sources:
 ctxt/s       rate(systemMetrics.cpu.ctxt)
 swapIn/s     rate(systemMetrics.vmstat.pswpin)
 swapOut/s    rate(systemMetrics.vmstat.pswpout)
+steal%       delta(systemMetrics.cpu.steal_ms) / delta(sum of all systemMetrics.cpu.*_ms) * 100
+procsRun     systemMetrics.cpu.procs_running
+procsBlk     systemMetrics.cpu.procs_blocked
+memAvailMB   systemMetrics.memory.MemAvailable_kb / 1024
+cachedMB     systemMetrics.memory.Cached_kb / 1024
+osDirtyMB    systemMetrics.memory.Dirty_kb / 1024
+heapMB       serverStatus.tcmalloc.generic.heap_size / 1024 / 1024
+allocMB      serverStatus.tcmalloc.generic.current_allocated_bytes / 1024 / 1024
+dbFree%      systemMetrics.mounts.<mount>.available / systemMetrics.mounts.<mount>.capacity * 100
+dbFreeGB     systemMetrics.mounts.<mount>.available / 1024^3
 ```
+
+`<mount>` is the longest mount point in the capture that contains
+`storage.dbPath` from the startup options (`/data/db` when it is not set).
+`available` is the space usable by non-root processes, as reported by the OS.
+`dbFree%` and `dbFreeGB` are `-` on `mongos`, which has no data files, and when
+no captured mount contains the dbPath. `heapMB - allocMB` is memory tcmalloc
+holds but the process is not using; a large gap explains `residentMB` above the
+WiredTiger cache size.
 
 `ctxt/s` is context switches per second from the cumulative Linux context
 switch counter (`/proc/stat` `ctxt` via FTDC `systemMetrics.cpu.ctxt`).

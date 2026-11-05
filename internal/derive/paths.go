@@ -38,6 +38,10 @@ func ViewNeedsVerboseSystem(view string, verbose bool) bool {
 	return verbose && view == "system"
 }
 
+func ViewNeedsVerboseServer(view string, verbose bool) bool {
+	return verbose && view == "server"
+}
+
 func ViewNeedsVerboseNetwork(view string, verbose bool) bool {
 	return verbose && view == "network"
 }
@@ -61,8 +65,16 @@ func RequiredPathsFor(view string, verbose, pressure bool) (map[string]bool, []s
 			paths[path] = true
 		}
 	}
+	prefixes := append([]string(nil), requiredPrefixes...)
 	if ViewNeedsVerboseSystem(view, verbose) {
 		for _, path := range verboseSystemPaths {
+			paths[path] = true
+		}
+		// Mount points vary per host, so dbFree% reads every mount.
+		prefixes = append(prefixes, "systemMetrics.mounts.")
+	}
+	if ViewNeedsVerboseServer(view, verbose) {
+		for _, path := range verboseServerPaths {
 			paths[path] = true
 		}
 	}
@@ -76,7 +88,7 @@ func RequiredPathsFor(view string, verbose, pressure bool) (map[string]bool, []s
 			paths[path] = true
 		}
 	}
-	return paths, append([]string(nil), requiredPrefixes...)
+	return paths, prefixes
 }
 
 func mongosExactRequiredPaths(view string, verbose bool) []string {
@@ -175,6 +187,28 @@ var verboseSystemPaths = []string{
 	"systemMetrics.cpu.ctxt",
 	"systemMetrics.vmstat.pswpin",
 	"systemMetrics.vmstat.pswpout",
+	"systemMetrics.memory.MemAvailable_kb",
+	"systemMetrics.memory.Cached_kb",
+	"systemMetrics.memory.Dirty_kb",
+	"serverStatus.tcmalloc.generic.heap_size",
+	"serverStatus.tcmalloc.generic.current_allocated_bytes",
+}
+
+var verboseServerPaths = []string{
+	"serverStatus.queues.execution.read.normalPriority.queueLength",
+	"serverStatus.queues.execution.write.normalPriority.queueLength",
+	"serverStatus.queues.execution.read.normalPriority.totalTimeQueuedMicros",
+	"serverStatus.queues.execution.write.normalPriority.totalTimeQueuedMicros",
+	"serverStatus.queues.execution.read.normalPriority.addedToQueue",
+	"serverStatus.queues.execution.write.normalPriority.addedToQueue",
+	"serverStatus.metrics.operation.writeConflicts",
+	"serverStatus.metrics.queryExecutor.collectionScans.total",
+	"serverStatus.metrics.queryExecutor.scanned",
+	"serverStatus.metrics.queryExecutor.scannedObjects",
+	"serverStatus.metrics.document.returned",
+	"serverStatus.transactions.currentActive",
+	"serverStatus.transactions.totalCommitted",
+	"serverStatus.transactions.totalAborted",
 }
 
 var verboseNetworkPaths = []string{
