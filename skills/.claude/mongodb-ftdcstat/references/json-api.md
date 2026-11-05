@@ -58,21 +58,26 @@ $F | jq '{version: .metadata.buildInfo.version, cacheSizeGB: .metadata.getCmdLin
 and by what was set on the command line, so check with `jq '.metadata | keys'`
 before relying on a path.
 
-## `--report stats --json`
+## `--stats` / `--findings` with `--json`
 
-A different document: top-level `report` (`"stats"`), `view`, `metadata`,
-`rsInfo`, `warnings`, `range` (`{start, end}`), `percentileRelativeAccuracy`
-(`0.01`), and `stats`:
+A different document: top-level `reports` (`["stats"]`, `["findings"]`, or
+both), `view`, `metadata`, `rsInfo`, `warnings`, `range` (`{start, end}`), and
+the requested reports.
 
 | Key | Content |
 |---|---|
+| `percentileRelativeAccuracy` | `0.01`; only with `--stats` |
 | `stats.rows`, `stats.restarts`, `stats.gaps` | Row count and boundary counts |
 | `stats.columns[]` | `{section, subsection?, column, n, nullPct, min, avg, p50, p95, p99, max, maxAt}`; value fields are `null` when `n` is 0; `subsection` is the device in `--view io` |
 | `stats.states[]` | Text columns such as `rsState`: `{section, column, values: [{value, rows, pct}], changes}` |
+| `findings.events[]` | `{time, type, ...}`; `process`/`restart`: `process`, `pid`, `start`; `gap`: `seconds`; `rsState`: `from`, `to`. Fields for other types are omitted |
 
 ```bash
 # columns that ever moved, with peak time
-mongodb-ftdcstat DIR --report stats --json | jq -r '.stats.columns[] | select((.max // 0) > 0) | [.section, .column, .p99, .max, .maxAt] | @tsv'
+mongodb-ftdcstat DIR --stats --json | jq -r '.stats.columns[] | select((.max // 0) > 0) | [.section, .column, .p99, .max, .maxAt] | @tsv'
+
+# restarts and state changes
+mongodb-ftdcstat DIR --findings --json | jq -r '.findings.events[] | select(.type != "gap") | [.time, .type, .pid // "", .from // "", .to // ""] | @tsv'
 ```
 
 ## `--web` / `--tui` HTTP endpoints

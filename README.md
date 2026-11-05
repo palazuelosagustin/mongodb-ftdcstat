@@ -13,7 +13,7 @@ go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat
 ## Usage
 
 ```bash
-mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--report stats] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
+mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
 
 The input is a directory, not a single FTDC file. The tool discovers
@@ -96,21 +96,26 @@ Averaging: 5m buckets; datetime is bucket start; values are averaged per bucket.
 
 right before the metrics table. Empty buckets are skipped.
 
-### `--report stats`
+### `--stats` and `--findings`
+
+Both print a short report instead of one row per sample. They can be used
+alone or together; together they still read the capture only once.
+
+#### `--stats`
 
 Prints per-column statistics for the selected view instead of one row per
 sample. It is a quick first look at a long capture: which columns ever moved,
 how high they went, and when.
 
 ```bash
-mongodb-ftdcstat diagnostic.data --report stats
-mongodb-ftdcstat diagnostic.data --report stats --view wt --verbose
-mongodb-ftdcstat diagnostic.data --report stats --view io --from "2026-06-04T19:00:00" --to "2026-06-04T20:00:00"
-mongodb-ftdcstat diagnostic.data --report stats --json
+mongodb-ftdcstat diagnostic.data --stats
+mongodb-ftdcstat diagnostic.data --stats --view wt --verbose
+mongodb-ftdcstat diagnostic.data --stats --view io --from "2026-06-04T19:00:00" --to "2026-06-04T20:00:00"
+mongodb-ftdcstat diagnostic.data --stats --findings --json
 ```
 
 The normal header tables are printed first; the `Report` table shows
-`Mode  report stats`. Then one line per numeric column of the view:
+`Mode  stats` (or `stats, findings`). Then one line per numeric column of the view:
 
 ```text
 section     column      n        null%  min   avg   p50   p95   p99   max     max at
@@ -133,8 +138,9 @@ max at   time of the first row that reached max
 Values use the same formatting as the table, except `avg` keeps one decimal
 for integer columns. Percentages that are not exactly 0 or 100 never print as
 `0.0` or `100.0`: they print as `<0.1` or `>99.9`, so a column with a handful of
-values is not shown as always empty. JSON keeps the exact values. Text columns such as `rsState` are summarized below the
-table as the share of rows per value plus the number of changes:
+values is not shown as always empty. JSON keeps the exact values.
+
+Text columns such as `rsState` are summarized below the table as the share of rows per value plus the number of changes:
 
 ```text
 replication rsState: PRIMARY 99.2%, SECONDARY 0.8%; 9 changes
@@ -144,26 +150,59 @@ The line above the table counts rows, restarts, and capture gaps (rate
 baseline resets).
 
 Statistics are always computed from every sample, so a short spike is not
-averaged away. `--report stats` reads the capture once and does not keep rows
-in memory.
+averaged away. The capture is read once and rows are not kept in memory.
 
-Rules:
+#### `--findings`
+
+A timeline of what happened in the capture. It reports facts only, with no
+thresholds or severity:
 
 ```text
---report stats works with --view, --verbose, --pressure, --device, --from, --to, and --json
---report cannot be combined with --avg, --web, or --tui
-stats is currently the only report
+Findings: 15 events
+
+2026-06-02T12:40:39Z  process  mongod pid=524587 start=2026-05-20T22:37:07Z
+2026-06-04T23:00:18Z  rsState  PRIMARY -> SECONDARY
+2026-06-04T23:25:27Z  gap      24m55s without samples, rate baseline reset
+2026-06-04T23:25:27Z  restart  mongod pid=656311 start=2026-06-04T23:25:26Z
+2026-06-04T23:25:38Z  rsState  SECONDARY -> PRIMARY
 ```
 
-With `--json`, the document has `report`, `view`, `metadata`, `rsInfo`,
-`warnings`, `range` (`start`, `end`), `percentileRelativeAccuracy`, and
-`stats`:
+```text
+process  first process in the range: pid and start time (start = sample time - uptime)
+restart  a new process: pid changed or uptime went down
+gap      time without samples longer than 60s; rates restart after it
+rsState  the node's replica-set state changed (mongod only)
+```
+
+Events do not depend on `--view`. Times are the first row that shows the
+event. Use them with `--from` / `--to` to zoom in.
+
+#### Rules
+
+```text
+--stats and --findings work with --view, --verbose, --pressure, --device, --from, --to, and --json
+--stats and --findings cannot be combined with --avg, --web, or --tui
+--report is no longer supported; it is rejected with a pointer to --stats and --findings
+```
+
+With `--json`, one document holds `reports` (`["stats"]`, `["findings"]`, or
+both), `view`, `metadata`, `rsInfo`, `warnings`, `range` (`start`, `end`), and
+the requested reports. `--stats` adds `percentileRelativeAccuracy` and `stats`:
 
 ```text
 stats.rows, stats.restarts, stats.gaps
 stats.columns[]  section, subsection (io device in --view io), column, n, nullPct,
                  min, avg, p50, p95, p99, max, maxAt (null when n is 0)
 stats.states[]   section, column, values[] {value, rows, pct}, changes
+```
+
+`--findings` adds `findings.events[]`, each with `time` and `type`, plus only
+the fields for that type:
+
+```text
+process, restart  process (mongod or mongos), pid, start
+gap               seconds
+rsState           from, to
 ```
 
 JSON values are unrounded.

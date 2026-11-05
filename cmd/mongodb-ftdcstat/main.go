@@ -21,7 +21,8 @@ import (
 type cliOptions struct {
 	Path     string
 	View     string
-	Report   string
+	Stats    bool
+	Findings bool
 	Avg      time.Duration
 	Device   string
 	JSON     bool
@@ -116,7 +117,7 @@ func main() {
 	timeLocation := time.UTC
 	renderOpts := render.Options{
 		View:            opts.View,
-		Report:          opts.Report,
+		Report:          reportMode(opts),
 		JSON:            opts.JSON,
 		ReportPath:      opts.Path,
 		IntervalSeconds: sampleIntervalSeconds,
@@ -151,8 +152,10 @@ func main() {
 	out := bufio.NewWriterSize(os.Stdout, 256*1024)
 	run := runStreamingTableOutput
 	switch {
-	case opts.Report == "stats":
-		run = runStatsReport
+	case opts.Stats || opts.Findings:
+		run = func(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {
+			return runReports(w, input, warnings, renderOpts, opts.Stats, opts.Findings)
+		}
 	case render.NeedsBufferedRows(renderOpts):
 		run = runBufferedOutput
 	}
@@ -219,14 +222,37 @@ func runStreamingTableOutput(w io.Writer, input captureInput, warnings []model.W
 	return renderer.Close()
 }
 
-// runStatsReport streams every row into per-column statistics and prints
-// them instead of the rows. It reads the capture once.
-func runStatsReport(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {
-	collector := render.NewStatsCollector(input.metadata, renderOpts)
+// reportMode is the header "Mode" value for --stats / --findings, or "".
+func reportMode(opts cliOptions) string {
+	var modes []string
+	if opts.Stats {
+		modes = append(modes, "stats")
+	}
+	if opts.Findings {
+		modes = append(modes, "findings")
+	}
+	return strings.Join(modes, ", ")
+}
+
+// runReports streams every row into the requested reports (--stats and/or
+// --findings) and prints them instead of the rows. It reads the capture once,
+// whichever reports are requested.
+func runReports(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options, withStats, withFindings bool) error {
+	statsCollector := render.NewStatsCollector(input.metadata, renderOpts)
+	var findingsCollector *render.FindingsCollector
+	if withFindings {
+		findingsCollector = render.NewFindingsCollector(input.metadata)
+	}
 	streamer := derive.NewStreamer(input.streamerOpts)
 	streamWarnings, err := input.reader.StreamFiles(input.files, input.readerOpts, func(sample model.MetricSample) error {
-		if row, ok := streamer.Add(sample); ok {
-			collector.Add(row)
+		row, ok := streamer.Add(sample)
+		if !ok {
+			return nil
+		}
+		// The stats collector also provides the header's range and row count.
+		statsCollector.Add(row)
+		if findingsCollector != nil {
+			findingsCollector.Add(row)
 		}
 		return nil
 	})
@@ -234,13 +260,22 @@ func runStatsReport(w io.Writer, input captureInput, warnings []model.Warning, r
 	if err != nil {
 		return err
 	}
-	renderOpts.MetricsRange = collector.MetricsRange()
-	renderOpts.SampleCount = collector.Rows()
-	report := collector.Report()
-	if renderOpts.JSON {
-		return render.RenderStatsJSON(w, input.metadata, append(warnings, streamWarnings...), report, renderOpts)
+	renderOpts.MetricsRange = statsCollector.MetricsRange()
+	renderOpts.SampleCount = statsCollector.Rows()
+	var statsReport *render.StatsReport
+	if withStats {
+		report := statsCollector.Report()
+		statsReport = &report
 	}
-	return render.RenderStatsText(w, input.metadata, report, renderOpts)
+	var findings *render.FindingsReport
+	if findingsCollector != nil {
+		report := findingsCollector.Report()
+		findings = &report
+	}
+	if renderOpts.JSON {
+		return render.RenderReportsJSON(w, input.metadata, append(warnings, streamWarnings...), statsReport, findings, renderOpts)
+	}
+	return render.RenderReportsText(w, input.metadata, statsReport, findings, renderOpts)
 }
 
 func runBufferedOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {
@@ -438,14 +473,12 @@ func parseArgs(args []string) (cliOptions, error) {
 			opts.View = strings.TrimPrefix(arg, "--view=")
 		case arg == "--interval" || strings.HasPrefix(arg, "--interval="):
 			return opts, errors.New("--interval is no longer supported; every FTDC sample is rendered, use --avg DURATION to group rows into time buckets")
-		case arg == "--report":
-			if i+1 >= len(args) {
-				return opts, errors.New("--report requires a value: stats")
-			}
-			i++
-			opts.Report = args[i]
-		case strings.HasPrefix(arg, "--report="):
-			opts.Report = strings.TrimPrefix(arg, "--report=")
+		case arg == "--stats":
+			opts.Stats = true
+		case arg == "--findings":
+			opts.Findings = true
+		case arg == "--report" || strings.HasPrefix(arg, "--report="):
+			return opts, errors.New("--report is no longer supported; use --stats and/or --findings")
 		case arg == "--device":
 			i++
 			if i >= len(args) {
@@ -507,15 +540,12 @@ func parseArgs(args []string) (cliOptions, error) {
 	if opts.View == "all" {
 		return opts, errors.New("--view all is no longer supported; use --view summary")
 	}
-	if opts.Report != "" {
-		if opts.Report != "stats" {
-			return opts, errors.New("--report must be: stats")
-		}
+	if opts.Stats || opts.Findings {
 		if opts.Web || opts.TUI {
-			return opts, errors.New("--report cannot be combined with --web or --tui")
+			return opts, errors.New("--stats and --findings cannot be combined with --web or --tui")
 		}
 		if opts.Avg > 0 {
-			return opts, errors.New("--report stats uses every sample so peaks are not averaged away; remove --avg")
+			return opts, errors.New("--stats and --findings use every sample so peaks are not averaged away; remove --avg")
 		}
 	}
 	if opts.JSON && (opts.Web || opts.TUI) {
@@ -556,7 +586,7 @@ func parseTimeArg(value string) (time.Time, error) {
 }
 
 func usage(w *os.File, name string) {
-	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--report stats] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]\n", name)
+	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]\n", name)
 }
 
 func printError(w io.Writer, err error) {

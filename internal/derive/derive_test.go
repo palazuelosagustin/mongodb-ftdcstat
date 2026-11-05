@@ -1030,3 +1030,26 @@ func TestRowsMongosHelloLatencySkipsClosedMonitoringCalls(t *testing.T) {
 		})
 	}
 }
+
+func TestRowsSetStructuredProcessAndGap(t *testing.T) {
+	rows := Rows([]model.MetricSample{
+		testSample(0, 0, map[string]float64{"serverStatus.pid": 10, "serverStatus.uptime": 100}),
+		testSample(1, 0, map[string]float64{"serverStatus.pid": 10, "serverStatus.uptime": 101}),
+		testSample(2, 0, map[string]float64{"serverStatus.pid": 10, "serverStatus.uptime": 102}),
+		testSample(200, 0, map[string]float64{"serverStatus.pid": 11, "serverStatus.uptime": 5}),
+	}, Options{IntervalSeconds: 1, GapThreshold: 60 * time.Second})
+	if len(rows) != 3 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	first := rows[0].Process
+	if first == nil || first.Restart || first.PID != 10 || !first.Start.Equal(time.Unix(-100, 0)) {
+		t.Fatalf("first process=%+v", first)
+	}
+	if rows[1].Process != nil || rows[1].GapSeconds != 0 {
+		t.Fatalf("plain row has events: %+v", rows[1])
+	}
+	last := rows[2]
+	if last.GapSeconds != 198 || last.Process == nil || !last.Process.Restart || last.Process.PID != 11 || !last.Process.Start.Equal(time.Unix(195, 0)) {
+		t.Fatalf("restart row gap=%v process=%+v", last.GapSeconds, last.Process)
+	}
+}

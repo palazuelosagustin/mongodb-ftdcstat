@@ -32,10 +32,10 @@ func TestStatsCollectorServerView(t *testing.T) {
 	c.Add(statsTestRow(2, map[string]any{"qTot": 4.0, "ins/s": 30.0, "wLatS": 0.5}))
 	// Restart row: rates are omitted entirely.
 	restart := statsTestRow(3, map[string]any{"qTot": 2.0})
-	restart.ProcessMarker = "--- mongod restart detected: pid=2 ---"
+	restart.Process = &derive.ProcessInfo{Restart: true, PID: 2}
 	c.Add(restart)
 	gap := statsTestRow(100, map[string]any{"qTot": 1.0, "ins/s": 20.0})
-	gap.Marker = "gap 97s: rate baseline reset"
+	gap.GapSeconds = 97
 	c.Add(gap)
 
 	report := c.Report()
@@ -132,11 +132,11 @@ func TestRenderStatsTextAndJSON(t *testing.T) {
 	report := c.Report()
 
 	var text bytes.Buffer
-	if err := RenderStatsText(&text, model.NewMetadata(), report, opts); err != nil {
+	if err := RenderReportsText(&text, model.NewMetadata(), &report, nil, opts); err != nil {
 		t.Fatal(err)
 	}
 	out := text.String()
-	for _, want := range []string{"| Mode", "report stats", "Stats: 2 rows, 0 restarts, 0 gaps", "section  column", "network  activeConn"} {
+	for _, want := range []string{"| Mode", "| stats", "Stats: 2 rows, 0 restarts, 0 gaps", "section  column", "network  activeConn"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("text missing %q:\n%s", want, out)
 		}
@@ -147,12 +147,13 @@ func TestRenderStatsTextAndJSON(t *testing.T) {
 	}
 
 	var js bytes.Buffer
-	if err := RenderStatsJSON(&js, model.NewMetadata(), nil, report, opts); err != nil {
+	if err := RenderReportsJSON(&js, model.NewMetadata(), nil, &report, nil, opts); err != nil {
 		t.Fatal(err)
 	}
 	var payload struct {
-		Report string `json:"report"`
-		Range  struct {
+		Reports  []string        `json:"reports"`
+		Findings json.RawMessage `json:"findings"`
+		Range    struct {
 			Start string `json:"start"`
 		} `json:"range"`
 		Stats struct {
@@ -167,7 +168,7 @@ func TestRenderStatsTextAndJSON(t *testing.T) {
 	if err := json.Unmarshal(js.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Report != "stats" || payload.Stats.Rows != 2 || payload.Range.Start != "1970-01-01T00:00:01Z" {
+	if len(payload.Reports) != 1 || payload.Reports[0] != "stats" || payload.Findings != nil || payload.Stats.Rows != 2 || payload.Range.Start != "1970-01-01T00:00:01Z" {
 		t.Fatalf("payload=%+v", payload)
 	}
 	last := payload.Stats.Columns[len(payload.Stats.Columns)-1]

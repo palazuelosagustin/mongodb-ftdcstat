@@ -25,6 +25,19 @@ type Row struct {
 	Marker        string         `json:"marker,omitempty"`
 	ProcessMarker string         `json:"processMarker,omitempty"`
 	Values        map[string]any `json:"values"`
+
+	// Structured forms of Marker and ProcessMarker, for reports.
+	// GapSeconds is the time without samples before this row (0 = no gap).
+	GapSeconds float64      `json:"-"`
+	Process    *ProcessInfo `json:"-"`
+}
+
+// ProcessInfo describes the process seen at a row: the first process of the
+// capture, or the new one after a restart.
+type ProcessInfo struct {
+	Restart bool
+	PID     int64 // 0 when unknown
+	Start   time.Time
 }
 
 type ReplMember struct {
@@ -93,14 +106,19 @@ func (s *Streamer) Add(cur model.MetricSample) (Row, bool) {
 	row := Row{Time: cur.Time, Values: map[string]any{}}
 	restarted := processRestart(prev, cur)
 	if cur.Time.Sub(prev.Time) > s.opts.GapThreshold {
-		row.Marker = fmt.Sprintf("gap %.0fs: rate baseline reset", cur.Time.Sub(prev.Time).Seconds())
+		row.GapSeconds = cur.Time.Sub(prev.Time).Seconds()
+		row.Marker = fmt.Sprintf("gap %.0fs: rate baseline reset", row.GapSeconds)
 	}
 	if !s.printedProcess {
 		row.ProcessMarker = processMarker("process", cur, s.opts.TimeLocation, s.opts.Metadata.ProcessKind())
 		s.printedProcess = row.ProcessMarker != ""
+		if s.printedProcess {
+			row.Process = processInfo(cur, false)
+		}
 	}
 	if restarted {
 		row.ProcessMarker = processMarker("restart detected", cur, s.opts.TimeLocation, s.opts.Metadata.ProcessKind())
+		row.Process = processInfo(cur, true)
 	}
 	reset := row.Marker != "" || restarted
 	if s.opts.Metadata.ProcessKind() == model.ProcessKindMongos {
@@ -641,6 +659,19 @@ func processMarker(event string, sample model.MetricSample, loc *time.Location, 
 		process = model.ProcessKindMongos
 	}
 	return fmt.Sprintf("--- %s %s: pid=%s start=%s ---", process, event, pid, start)
+}
+
+func processInfo(sample model.MetricSample, restart bool) *ProcessInfo {
+	info := &ProcessInfo{Restart: restart}
+	if v, ok := sample.Get("serverStatus.pid"); ok {
+		info.PID = int64(v)
+	}
+	if v, ok := sample.Get("serverStatus.uptimeMillis"); ok && v >= 0 {
+		info.Start = sample.Time.Add(-time.Duration(v) * time.Millisecond)
+	} else if v, ok := sample.Get("serverStatus.uptime"); ok && v >= 0 {
+		info.Start = sample.Time.Add(-time.Duration(v) * time.Second)
+	}
+	return info
 }
 
 func processStart(sample model.MetricSample, loc *time.Location) string {

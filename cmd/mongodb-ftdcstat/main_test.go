@@ -334,32 +334,42 @@ func TestBuildWebLinks(t *testing.T) {
 	}
 }
 
-func TestParseArgsReportStats(t *testing.T) {
-	for _, args := range [][]string{
-		{"diagnostic.data", "--report", "stats"},
-		{"diagnostic.data", "--report=stats", "--view", "wt", "--verbose", "--json"},
-		{"diagnostic.data", "--report", "stats", "--view", "system", "--pressure", "--from", "2026-06-04T19:00:00"},
+func TestParseArgsStatsAndFindings(t *testing.T) {
+	for _, tc := range []struct {
+		args          []string
+		stats, finds  bool
+		wantReportMod string
+	}{
+		{[]string{"diagnostic.data", "--stats"}, true, false, "stats"},
+		{[]string{"diagnostic.data", "--findings"}, false, true, "findings"},
+		{[]string{"diagnostic.data", "--stats", "--findings", "--json"}, true, true, "stats, findings"},
+		{[]string{"diagnostic.data", "--findings", "--view", "wt", "--verbose"}, false, true, "findings"},
+		{[]string{"diagnostic.data", "--stats", "--view", "system", "--pressure", "--from", "2026-06-04T19:00:00"}, true, false, "stats"},
 	} {
-		opts, err := parseArgs(args)
+		opts, err := parseArgs(tc.args)
 		if err != nil {
-			t.Fatalf("%v: %v", args, err)
+			t.Fatalf("%v: %v", tc.args, err)
 		}
-		if opts.Report != "stats" {
-			t.Fatalf("%v: report=%q", args, opts.Report)
+		if opts.Stats != tc.stats || opts.Findings != tc.finds {
+			t.Fatalf("%v: stats=%v findings=%v", tc.args, opts.Stats, opts.Findings)
+		}
+		if got := reportMode(opts); got != tc.wantReportMod {
+			t.Fatalf("%v: mode=%q want %q", tc.args, got, tc.wantReportMod)
 		}
 	}
 }
 
-func TestParseArgsReportRejections(t *testing.T) {
+func TestParseArgsStatsAndFindingsRejections(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
 		want string
 	}{
-		{[]string{"diagnostic.data", "--report"}, "--report requires a value"},
-		{[]string{"diagnostic.data", "--report", "findings"}, "--report must be: stats"},
-		{[]string{"diagnostic.data", "--report", "stats", "--avg", "5m"}, "remove --avg"},
-		{[]string{"diagnostic.data", "--report", "stats", "--web"}, "--report cannot be combined with --web or --tui"},
-		{[]string{"diagnostic.data", "--report", "stats", "--tui"}, "--report cannot be combined with --web or --tui"},
+		{[]string{"diagnostic.data", "--report", "stats"}, "--report is no longer supported; use --stats and/or --findings"},
+		{[]string{"diagnostic.data", "--report=stats"}, "--report is no longer supported"},
+		{[]string{"diagnostic.data", "--stats", "--avg", "5m"}, "remove --avg"},
+		{[]string{"diagnostic.data", "--findings", "--avg", "5m"}, "remove --avg"},
+		{[]string{"diagnostic.data", "--stats", "--web"}, "--stats and --findings cannot be combined with --web or --tui"},
+		{[]string{"diagnostic.data", "--findings", "--tui"}, "--stats and --findings cannot be combined with --web or --tui"},
 	} {
 		_, err := parseArgs(tc.args)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

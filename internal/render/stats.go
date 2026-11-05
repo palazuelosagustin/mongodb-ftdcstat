@@ -58,10 +58,10 @@ func (c *StatsCollector) Add(row derive.Row) {
 		c.start = row.Time
 	}
 	c.end = row.Time
-	if strings.Contains(row.ProcessMarker, "restart detected") {
+	if row.Process != nil && row.Process.Restart {
 		c.restarts++
 	}
-	if row.Marker != "" {
+	if row.GapSeconds > 0 {
 		c.gaps++
 	}
 
@@ -290,8 +290,9 @@ func statesSummary(section, column string, states *stats.States) StatsStates {
 	return out
 }
 
-// RenderStatsText writes the CLI header followed by the stats tables.
-func RenderStatsText(w io.Writer, metadata model.Metadata, report StatsReport, opts Options) error {
+// RenderReportsText writes the CLI header followed by the requested report
+// sections. A nil report is skipped.
+func RenderReportsText(w io.Writer, metadata model.Metadata, statsReport *StatsReport, findings *FindingsReport, opts Options) error {
 	if err := RenderCLIHeader(w, metadata, opts); err != nil {
 		return err
 	}
@@ -299,6 +300,19 @@ func RenderStatsText(w io.Writer, metadata model.Metadata, report StatsReport, o
 	if loc == nil {
 		loc = time.UTC
 	}
+	if statsReport != nil {
+		renderStatsSection(w, *statsReport, loc)
+	}
+	if findings != nil {
+		if statsReport != nil {
+			fmt.Fprintln(w)
+		}
+		renderFindingsSection(w, *findings, loc)
+	}
+	return nil
+}
+
+func renderStatsSection(w io.Writer, report StatsReport, loc *time.Location) {
 	fmt.Fprintf(w, "Stats: %d rows, %d restarts, %d gaps; percentiles are within %.0f%%; max at is the first row with the max.\n\n",
 		report.Rows, report.Restarts, report.Gaps, stats.RelativeAccuracy*100)
 
@@ -331,7 +345,6 @@ func RenderStatsText(w io.Writer, metadata model.Metadata, report StatsReport, o
 		}
 		fmt.Fprintf(w, "\n%s %s: %s; %d changes\n", states.Section, states.Column, values, states.Changes)
 	}
-	return nil
 }
 
 // formatShare prints a percentage with one decimal, but never rounds a share
@@ -392,13 +405,14 @@ func statsValue(v *float64, key string) string {
 	return format(*v, key)
 }
 
-// RenderStatsJSON writes the stats report as one JSON document.
-func RenderStatsJSON(w io.Writer, metadata model.Metadata, warnings []model.Warning, report StatsReport, opts Options) error {
+// RenderReportsJSON writes the requested reports as one JSON document:
+// "stats" and/or "findings" are present when requested; "reports" lists them.
+func RenderReportsJSON(w io.Writer, metadata model.Metadata, warnings []model.Warning, statsReport *StatsReport, findings *FindingsReport, opts Options) error {
 	if warnings == nil {
 		warnings = []model.Warning{}
 	}
+	reports := []string{}
 	payload := map[string]any{
-		"report":   "stats",
 		"view":     opts.View,
 		"metadata": metadata.Summary(),
 		"rsInfo":   rsInfoForJSON(derive.ReplSetInfoFromMetadata(metadata)),
@@ -407,9 +421,17 @@ func RenderStatsJSON(w io.Writer, metadata model.Metadata, warnings []model.Warn
 			"start": jsonTime(opts.MetricsRange.Start),
 			"end":   jsonTime(opts.MetricsRange.End),
 		},
-		"percentileRelativeAccuracy": stats.RelativeAccuracy,
-		"stats":                      report,
 	}
+	if statsReport != nil {
+		reports = append(reports, "stats")
+		payload["percentileRelativeAccuracy"] = stats.RelativeAccuracy
+		payload["stats"] = statsReport
+	}
+	if findings != nil {
+		reports = append(reports, "findings")
+		payload["findings"] = findings
+	}
+	payload["reports"] = reports
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(payload)
