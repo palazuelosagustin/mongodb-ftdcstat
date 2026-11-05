@@ -2,7 +2,7 @@ interface:
   display_name: mongodb-ftdcstat metrics
   short_description: interpret mongodb-ftdcstat output from mongodb ftdc diagnostic.data captures,
     including terminal tables, json output, and local web api data. use when analyzing
-    mongodb-ftdcstat metrics, explaining summary/server/wt/system/network/repl views, diagnosing
+    mongodb-ftdcstat metrics, explaining summary/server/wt/system/io/network/repl views and --stats/--findings reports, diagnosing
     mongodb or percona server performance symptoms, mapping columns to source metrics
     and formulas, advising which mongodb-ftdcstat command to run, or updating docs/tests
     that change mongodb-ftdcstat metric semantics.

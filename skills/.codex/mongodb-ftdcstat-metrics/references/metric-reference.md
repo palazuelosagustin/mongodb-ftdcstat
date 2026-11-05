@@ -6,14 +6,15 @@
 
 Views:
 
-- `summary`: one wide table in this order: `replication | server | network | system | wiredTiger`. Use for triage.
-- `all`: compatibility alias for `summary`.
+- `summary`: one wide table in this order: `replication | server | network | system | io | wiredTiger`. Use for triage.
 - `server`: serverStatus counters, latencies, and queues.
 - `wt`: WiredTiger cache, eviction, checkpoint, and ticket metrics.
 - `system`: CPU, memory, disk, swap, and optionally Linux PSI.
 - `network`: connection activity and connection-establishment diagnostics.
+- `io`: per-device disk metrics, devices side by side.
 - `repl`: replica-set lag and replication state.
-- `disk`: compatibility alias for `system`.
+
+`all` and `disk` are no longer accepted; use `summary` and `system`.
 
 Important flags:
 
@@ -23,20 +24,21 @@ Important flags:
 - `--from ISO_TIME` / `--to ISO_TIME`: filter samples; `from` is inclusive and `to` is exclusive.
 - `--device DEVICE`: filter disk-derived fields to one device.
 - `--json`: output a compact metadata summary (same facts as the CLI header), warnings, selected view, derived rows, and `rsInfo.members` mapping.
-- `--web`: serve a local plotting UI and still print terminal output; cannot combine with `--json`.
+- `--web`: serve a local plotting UI and still print terminal output. `--tui`: serve a browser table and suppress the terminal table. Neither can combine with `--json`.
 - `--verbose`: expands only `repl`, `wt`, `system`, and `network`; not `summary`.
 - `--pressure`: only supported for `--view system`; appends Linux PSI columns in a separate pressure section.
 
-## Header fields
+## Header tables
 
-- `buildInfo`: version/build/storage/allocator/OpenSSL and Percona features when present.
-- `rsInfo`: replica set name plus `node1..nodeN` to host:port mapping.
-- `hostInfo`: hostname, OS, kernel, libc, CPU topology, memory, pages, THP, version string.
-- `getCmdLineOpts`: parsed startup config flattened into `key=value` lines.
-- `configured parameters`: configured values such as WiredTiger cache size.
-- `metricsRange`: actual first and last rendered metric row timestamps after view selection and filtering.
-- `network maxConn`: first usable sample's `connections.current + connections.available`, or `-` when unavailable.
-- Process markers before rows show mongod PID/start and restarts. Rate baselines reset after detected restarts.
+- `Report`: path, view, mode (`stats`, `findings`), averaging, `Samples`, `From`/`To` (actual first and last rendered rows after filtering), and process kind (`mongod`/`mongos`).
+- `Host`: hostname, OS, kernel, architecture, CPU cores, memory, and `Max connections` (first usable sample's `connections.current + connections.available`).
+- `Build`: version, git version, storage engine, allocator, OpenSSL, and Percona features when present.
+- `Replica Set`: set name and `node1..nodeN` to host:port mapping.
+- `Command Line Options`: parsed startup config as `key  value` rows.
+- `Parameters`: WiredTiger cache size and explicitly configured `setParameter` values.
+- Process markers before rows show PID/start and restarts. Rate baselines reset after detected restarts.
+
+In JSON, the same facts are in `metadata` (process, host, build, cmdLineOpts, parameters) and `rsInfo`.
 
 ## Common display semantics
 
@@ -145,7 +147,7 @@ Interpretation hints:
 
 - High `wtCache%` alone is not bad; WiredTiger cache is expected to be used.
 - High `dirty%`, long `ckptMS`, high `wtWrMB/s`, and write latency together suggest checkpoint/write pressure.
-- Low `rdTkt` or `wrTkt` sustained near zero can indicate ticket starvation or saturated concurrency.
+- Low `rdTkt` or `wrTkt` sustained near zero can indicate ticket starvation or saturated concurrency before 7.0. From 7.0 tickets are adjusted dynamically, so a low value alone does not mean saturation.
 - High `appEvict/s` means application threads are helping eviction, often a cache pressure symptom when sustained.
 - High history store rates can indicate long-running transactions, pinned snapshots, or workload patterns that retain old versions.
 - Missing WiredTiger verbose fields may be version-specific and should render as unknown, not healthy.
@@ -272,7 +274,7 @@ mongodb-ftdcstat diagnostic.data --view system --verbose --device <device> --avg
 
 ### WiredTiger cache pressure
 
-Look for high dirty/cache pressure, high `appEvict/s`, low tickets, high checkpoint duration, high history store activity, and latency increases.
+Look for high dirty/cache pressure, high `appEvict/s`, low tickets (before 7.0 only), high checkpoint duration, high history store activity, and latency increases.
 
 Next command:
 

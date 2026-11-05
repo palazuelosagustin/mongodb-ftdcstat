@@ -5,13 +5,13 @@
 Build:
 
 ```bash
-go build -o mongodb-ftdcstat ./cmd/ftdcstat
+go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat
 ```
 
 General form:
 
 ```bash
-mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|all] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--listen ADDR] [--verbose] [--pressure]
+mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
 ```
 
 The input must be a MongoDB FTDC `diagnostic.data` directory. The tool discovers `metrics.*`, `metrics.interim`, `interim*`, and exported JSON files and treats them as one chronological capture.
