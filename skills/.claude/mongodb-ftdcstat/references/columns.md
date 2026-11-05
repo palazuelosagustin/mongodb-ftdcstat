@@ -348,7 +348,10 @@ Shown first in mongos `--view summary` and as the focused mongos `--view repl`.
 
 ```text
 nodes       number of hosts in router.connPoolStats.replicaSetPingTimesMillis.*
-pingMS      average of those ping times, milliseconds
+pingMS      average of those ping times, milliseconds, over hosts with a real
+            ping time; hosts not pinged yet (mongos reports the int64 maximum,
+            or it divided by 1000) are skipped; `-` when no host has one,
+            for example right after mongos starts
 helloOps/s  rate(router.connPoolStats.replicaSetMonitor.hello.totalCalls)
 helloMS     delta(hello.totalLatencyMicros) / delta(hello.totalCalls) / 1000
 ghaOps/s    rate(router.connPoolStats.replicaSetMonitor.getHostAndRefresh.totalCalls)

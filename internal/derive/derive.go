@@ -549,9 +549,11 @@ func fillReplication(row *Row, c calculator, members *replMemberRegistry, reset 
 }
 
 func fillMongosRouter(row *Row, c calculator, reset bool) {
-	pingCount, pingAvg := mongosPingSummary(c.cur)
-	if pingCount > 0 {
-		row.Values["nodes"] = float64(pingCount)
+	hosts, pingAvg, pingOK := mongosPingSummary(c.cur)
+	if hosts > 0 {
+		row.Values["nodes"] = float64(hosts)
+	}
+	if pingOK {
 		row.Values["pingMS"] = pingAvg
 	}
 	setCurrent(row, "clientConn", c, "router.connPoolStats.numClientConnections")
@@ -699,20 +701,33 @@ func latencyAverageMillis(c calculator, totalLatencyPath, totalCallsPath string)
 	return latency / calls / 1000, true
 }
 
-func mongosPingSummary(sample model.MetricSample) (int, float64) {
+// unknownPingMillis is the smallest value treated as "no ping time yet".
+// mongos reports members it has not pinged with a sentinel instead of a real
+// time: the int64 maximum, or that maximum divided by 1000. Real ping times
+// are far below this bound (about 31 years).
+const unknownPingMillis = 1e12
+
+// mongosPingSummary returns the number of hosts in the router ping table and
+// the average of their real ping times. ok is false when no host has a real
+// ping time, for example right after mongos starts.
+func mongosPingSummary(sample model.MetricSample) (hosts int, avgMillis float64, ok bool) {
 	var sum float64
-	var count int
+	var known int
 	for path, value := range sample.Values {
 		if !strings.HasPrefix(path, "router.connPoolStats.replicaSetPingTimesMillis.") {
 			continue
 		}
+		hosts++
+		if value < 0 || value >= unknownPingMillis {
+			continue
+		}
 		sum += value
-		count++
+		known++
 	}
-	if count == 0 {
-		return 0, 0
+	if known == 0 {
+		return hosts, 0, false
 	}
-	return count, sum / float64(count)
+	return hosts, sum / float64(known), true
 }
 
 func matchedRateSum(c calculator, prefix, suffix string) (float64, bool) {

@@ -1,6 +1,7 @@
 package derive
 
 import (
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -925,5 +926,60 @@ func TestRowsOneSecondIntervalKeepsJitteredSamples(t *testing.T) {
 	rows := Rows(samples, Options{IntervalSeconds: 1})
 	if len(rows) != len(samples)-1 {
 		t.Fatalf("got %d rows want %d", len(rows), len(samples)-1)
+	}
+}
+
+func TestRowsMongosPingSkipsUnknownSentinels(t *testing.T) {
+	const prefix = "router.connPoolStats.replicaSetPingTimesMillis."
+	maxInt64Millis := float64(math.MaxInt64)
+	tests := []struct {
+		name      string
+		pings     map[string]float64
+		wantNodes any
+		wantPing  any
+	}{
+		{
+			name:      "all real",
+			pings:     map[string]float64{"rs0.h1": 2, "rs0.h2": 4},
+			wantNodes: float64(2),
+			wantPing:  float64(3),
+		},
+		{
+			name:      "int64 max and int64 max / 1000 are skipped",
+			pings:     map[string]float64{"cfg.h0": maxInt64Millis, "rs0.h1": 0, "rs0.h2": 0, "rs0.h3": 3, "rs1.h1": maxInt64Millis / 1000},
+			wantNodes: float64(5),
+			wantPing:  float64(1),
+		},
+		{
+			name:      "no member pinged yet",
+			pings:     map[string]float64{"cfg.h0": maxInt64Millis, "rs0.h1": maxInt64Millis},
+			wantNodes: float64(2),
+			wantPing:  nil,
+		},
+		{
+			name:      "negative values are skipped",
+			pings:     map[string]float64{"rs0.h1": -1, "rs0.h2": 6},
+			wantNodes: float64(2),
+			wantPing:  float64(6),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values := map[string]float64{}
+			for host, ping := range tt.pings {
+				values[prefix+host] = ping
+			}
+			rows := Rows([]model.MetricSample{testSample(0, 0, values), testSample(1, 0, values)},
+				Options{IntervalSeconds: 1, Metadata: testMetadataWithProcess(model.ProcessKindMongos)})
+			if len(rows) != 1 {
+				t.Fatalf("got %d rows", len(rows))
+			}
+			if got := rows[0].Values["nodes"]; got != tt.wantNodes {
+				t.Fatalf("nodes=%v want %v", got, tt.wantNodes)
+			}
+			if got := rows[0].Values["pingMS"]; got != tt.wantPing {
+				t.Fatalf("pingMS=%v want %v", got, tt.wantPing)
+			}
+		})
 	}
 }
