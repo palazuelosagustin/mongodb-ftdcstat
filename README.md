@@ -299,6 +299,15 @@ section objects such as `replication` and `server`; `replication.lagS` contains
 the per-node lag values, `replication.majLagS` contains the majority commit lag,
 and unavailable lag values are `null`.
 
+The JSON document is written as a stream, one row at a time, so the tool's
+memory stays flat (about 20 MB) whatever the capture size; a 13-day capture
+no longer needs several GB. Views whose columns depend on all rows
+(`summary` and `repl` on mongod, for late-joining replica-set members, and
+`io`, for disk devices) read the capture twice: once for those labels, once
+to write. The output is the same document as before. A reader such as `jq`
+still loads the whole document, so on long captures filter with `--from` /
+`--to` or `--columns` first.
+
 `metadata` is a compact summary of the capture, with the same facts as the CLI
 header tables. It is not the raw FTDC metadata documents (`buildInfo`,
 `hostInfo`, `getParameter`, ...), which are tens of KB of mostly defaults and

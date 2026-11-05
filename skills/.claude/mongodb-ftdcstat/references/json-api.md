@@ -25,6 +25,10 @@ Inside a section, keys are the column names from the terminal table
 - `replication.lagS` is an object keyed `node1..nodeN`; map through `rsInfo.members`.
 - In `--view io`, per-device values are under `io.devices.<device>.<column>`. In other views `io` is the single selected/aggregate device.
 
+`--json` is streamed by the tool (flat memory on any capture), but it is one
+document: `jq` loads all of it. On long captures narrow it with `--from/--to`
+or `--columns` before piping to `jq`.
+
 Value semantics differ from the table:
 
 - Values are **unrounded** floats (the table rounds to 1 or 3 decimals). Round before quoting them.

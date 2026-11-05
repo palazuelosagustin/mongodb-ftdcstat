@@ -177,6 +177,8 @@ func main() {
 		run = func(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {
 			return runReports(w, input, warnings, renderOpts, opts.Stats, opts.Findings)
 		}
+	case opts.JSON:
+		run = runStreamingJSONOutput
 	case render.NeedsBufferedRows(renderOpts):
 		run = runBufferedOutput
 	}
@@ -318,6 +320,60 @@ func runReports(w io.Writer, input captureInput, warnings []model.Warning, rende
 		return render.RenderReportsJSON(w, input.metadata, append(warnings, streamWarnings...), statsReport, findings, renderOpts)
 	}
 	return render.RenderReportsText(w, input.metadata, statsReport, findings, renderOpts)
+}
+
+// runStreamingJSONOutput writes --json row by row, so memory does not grow
+// with the capture. When the row layout depends on the rows (replica-set
+// members first seen in rows, disk devices), a first pass collects those
+// labels, as the streaming table does for its header.
+func runStreamingJSONOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {
+	renderOpts.AvgBucket = input.avgBucket
+	var labels *render.LabelCollector
+	if render.JSONLayoutNeedsRows(input.metadata, renderOpts) {
+		labels = render.NewLabelCollector()
+		if _, err := forEachRow(input, func(row derive.Row) error {
+			labels.Add(row)
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	stream, err := render.StartJSON(w, input.metadata, warnings, renderOpts, labels)
+	if err != nil {
+		return err
+	}
+	streamWarnings, err := forEachRow(input, stream.Row)
+	emitWarnings(streamWarnings)
+	if err != nil {
+		return err
+	}
+	return stream.Close()
+}
+
+// forEachRow streams the capture through the deriver and the --avg
+// averager and calls fn for every output row.
+func forEachRow(input captureInput, fn func(derive.Row) error) ([]model.Warning, error) {
+	streamer := derive.NewStreamer(input.streamerOpts)
+	averager := aggregate.NewRowBucketAverager(input.avgBucket)
+	warnings, err := input.reader.StreamFiles(input.files, input.readerOpts, func(sample model.MetricSample) error {
+		if row, ok := streamer.Add(sample); ok {
+			for _, averaged := range averager.Add(row) {
+				if err := fn(averaged); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return warnings, err
+	}
+	for _, averaged := range averager.Flush() {
+		if err := fn(averaged); err != nil {
+			return warnings, err
+		}
+	}
+	return warnings, nil
 }
 
 func runBufferedOutput(w io.Writer, input captureInput, warnings []model.Warning, renderOpts render.Options) error {

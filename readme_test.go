@@ -37,6 +37,7 @@ func TestREADMEDocumentsViewsColumnsAndFormulas(t *testing.T) {
 		"Default: `summary`.",
 		"`--interval` is no longer supported",
 		"--avg",
+		"The JSON document is written as a stream, one row at a time",
 		"### `--columns COL,...`",
 		"### `--list-columns`",
 		"--columns replaces --view; using both is rejected",

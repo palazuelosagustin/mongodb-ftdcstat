@@ -8,7 +8,8 @@ const (
 	OutputTable OutputMode = iota
 	// OutputBufferedTable buffers rows before emitting a table.
 	OutputBufferedTable
-	// OutputJSON buffers rows before emitting the JSON document.
+	// OutputJSON emits the JSON document. The CLI streams it row by row
+	// (JSONStream); Render, which already has all rows, writes it at once.
 	OutputJSON
 )
 

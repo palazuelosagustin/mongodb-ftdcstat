@@ -71,6 +71,6 @@ Use `--avg` or `--from`/`--to` with large captures to keep browser rendering res
 
 ## json mode
 
-`--json` prints a compact metadata summary (process, host, build, cmdLineOpts, parameters; not the raw FTDC metadata documents), warnings, selected view, derived rows, and `rsInfo.members` mapping. Rows include grouped section objects such as `replication`, `server`, `network`, `system`, and `wiredTiger`. Missing values are `null`. `replication.lagS` contains per-node lag values and `replication.majLagS` contains majority commit lag.
+`--json` prints a compact metadata summary (process, host, build, cmdLineOpts, parameters; not the raw FTDC metadata documents), warnings, selected view, derived rows, and `rsInfo.members` mapping. Rows include grouped section objects such as `replication`, `server`, `network`, `system`, and `wiredTiger`. Missing values are `null`. `replication.lagS` contains per-node lag values and `replication.majLagS` contains majority commit lag. The document is streamed (flat memory on any capture size), but `jq` still loads all of it, so narrow long captures with `--from/--to` or `--columns` first.
 
 `--json` cannot be combined with `--web`.

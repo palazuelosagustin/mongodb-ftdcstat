@@ -1,7 +1,6 @@
 package render
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -85,22 +84,16 @@ func Render(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows
 }
 
 func RenderJSON(w io.Writer, metadata model.Metadata, warnings []model.Warning, rows []derive.Row, opts Options) error {
-	rsInfo := derive.ReplSetInfoFromMetadata(metadata)
-	layout := layoutFor(opts, replicationNodeLabels(rsInfo, rows), ioDeviceLabels(rows), metadata.ProcessKind())
-	payload := map[string]any{
-		"metadata": MetadataSummary(metadata),
-		"rsInfo":   rsInfoForJSON(rsInfo),
-		"warnings": warnings,
-		"view":     opts.View,
-		"avg":      avgPayload(opts.AvgBucket),
-		"rows":     rowsForJSON(rows, layout),
+	stream, err := startJSON(w, metadata, warnings, opts, rows)
+	if err != nil {
+		return err
 	}
-	if len(opts.Columns) > 0 {
-		payload["columns"] = opts.Columns
+	for _, row := range rows {
+		if err := stream.Row(row); err != nil {
+			return err
+		}
 	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(payload)
+	return stream.Close()
 }
 
 func RenderCLITable(w io.Writer, metadata model.Metadata, rows []derive.Row, opts Options) error {
@@ -427,63 +420,60 @@ func rsInfoForJSON(info derive.ReplSetInfo) map[string]any {
 	return map[string]any{"set": set, "members": members}
 }
 
-func rowsForJSON(rows []derive.Row, layout tableLayout) []map[string]any {
-	out := make([]map[string]any, 0, len(rows))
-	for _, row := range rows {
-		item := map[string]any{
-			"time": row.Time,
-		}
-		if row.Kind != "" {
-			item["kind"] = row.Kind
-		}
-		if row.Marker != "" {
-			item["marker"] = row.Marker
-		}
-		if row.ProcessMarker != "" {
-			item["processMarker"] = row.ProcessMarker
-		}
-		ioDevices := map[string]map[string]any{}
-		for _, section := range layout.Sections {
-			if section.Name == "replication" {
-				replication := map[string]any{}
-				lagValues := map[string]any{}
-				for i := section.Start; i < section.End && i < len(layout.Columns); i++ {
-					col := layout.Columns[i]
-					if col == "lagSLabel" {
-						continue
-					}
-					if !isNodeLagColumn(col) {
-						replication[metricJSONName(col)] = valueForColumn(row, col)
-						continue
-					}
-					lagValues[col] = valueForColumn(row, col)
+// rowForJSON converts one derived row to its --json object.
+func rowForJSON(row derive.Row, layout tableLayout) map[string]any {
+	item := map[string]any{
+		"time": row.Time,
+	}
+	if row.Kind != "" {
+		item["kind"] = row.Kind
+	}
+	if row.Marker != "" {
+		item["marker"] = row.Marker
+	}
+	if row.ProcessMarker != "" {
+		item["processMarker"] = row.ProcessMarker
+	}
+	ioDevices := map[string]map[string]any{}
+	for _, section := range layout.Sections {
+		if section.Name == "replication" {
+			replication := map[string]any{}
+			lagValues := map[string]any{}
+			for i := section.Start; i < section.End && i < len(layout.Columns); i++ {
+				col := layout.Columns[i]
+				if col == "lagSLabel" {
+					continue
 				}
-				replication["lagS"] = lagValues
-				item[section.Name] = replication
-				continue
-			}
-			if section.Name == "io" && section.Subsection != "" {
-				values := map[string]any{}
-				for i := section.Start; i < section.End && i < len(layout.Columns); i++ {
-					col := layout.Columns[i]
-					values[metricJSONName(col)] = valueForColumn(row, col)
+				if !isNodeLagColumn(col) {
+					replication[metricJSONName(col)] = valueForColumn(row, col)
+					continue
 				}
-				ioDevices[section.Subsection] = values
-				continue
+				lagValues[col] = valueForColumn(row, col)
 			}
+			replication["lagS"] = lagValues
+			item[section.Name] = replication
+			continue
+		}
+		if section.Name == "io" && section.Subsection != "" {
 			values := map[string]any{}
 			for i := section.Start; i < section.End && i < len(layout.Columns); i++ {
 				col := layout.Columns[i]
 				values[metricJSONName(col)] = valueForColumn(row, col)
 			}
-			item[section.Name] = values
+			ioDevices[section.Subsection] = values
+			continue
 		}
-		if len(ioDevices) > 0 {
-			item["io"] = map[string]any{"devices": ioDevices}
+		values := map[string]any{}
+		for i := section.Start; i < section.End && i < len(layout.Columns); i++ {
+			col := layout.Columns[i]
+			values[metricJSONName(col)] = valueForColumn(row, col)
 		}
-		out = append(out, item)
+		item[section.Name] = values
 	}
-	return out
+	if len(ioDevices) > 0 {
+		item["io"] = map[string]any{"devices": ioDevices}
+	}
+	return item
 }
 
 func replConfigBody(doc map[string]any) map[string]any {
