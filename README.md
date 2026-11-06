@@ -4,16 +4,62 @@
 `mongod` versus `mongos`, and prints FTDC metrics as terminal-friendly tables or
 serves a local plotting UI.
 
-## Build
+## Install
+
+Download the binary for your platform from the
+[latest release](https://github.com/palazuelosagustin/mongodb-ftdcstat/releases/latest)
+(macOS and Linux, amd64 and arm64):
+
+```bash
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+curl -fsSL "https://github.com/palazuelosagustin/mongodb-ftdcstat/releases/latest/download/mongodb-ftdcstat_${OS}_${ARCH}.tar.gz" | tar -xz mongodb-ftdcstat
+./mongodb-ftdcstat --version
+```
+
+Move the binary to a directory on your `PATH`. A file downloaded with a
+browser on macOS is quarantined; clear it with
+`xattr -d com.apple.quarantine mongodb-ftdcstat`. Each release lists `checksums.txt`
+(SHA-256) for the archives.
+
+## Build from source
+
+Requires Go `1.22+`.
 
 ```bash
 go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat
 ```
 
+A source build reports `dev (<commit>)` as its version.
+
+## Versions and releases
+
+Releases follow [semantic versioning](https://semver.org/). Until `v1.0.0`, a
+minor release (`v0.2.0`) adds or changes reports, flags, columns or JSON
+fields, and a patch release (`v0.1.1`) only fixes bugs. `--version` prints the
+version, commit and build date, and every JSON output carries `toolVersion`, so
+a saved result says which build produced it. Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
+
+To release: move the `Unreleased` entries in `CHANGELOG.md` under the new
+version, commit, then tag and push the tag:
+
+```bash
+git tag -a v0.2.0 -m v0.2.0
+git push origin v0.2.0
+```
+
+The `release` GitHub Actions workflow runs the tests and publishes the
+archives with [GoReleaser](https://goreleaser.com/) (`.goreleaser.yaml`). Check
+the config locally with `goreleaser release --snapshot --clean`; it writes to
+`dist/` and publishes nothing.
+
 ## Usage
 
 ```bash
 mongodb-ftdcstat <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io | --columns COL,...] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]
+mongodb-ftdcstat --list-columns [--view VIEW] [--json]
+mongodb-ftdcstat --version
 ```
 
 The input is a directory, not a single FTDC file. The tool discovers
@@ -238,7 +284,7 @@ event. Use them with `--from` / `--to` to zoom in.
 ```
 
 With `--json`, one document holds `reports` (`["stats"]`, `["findings"]`, or
-both), `view`, `metadata`, `rsInfo`, `warnings`, `range` (`start`, `end`), and
+both), `toolVersion`, `view`, `metadata`, `rsInfo`, `warnings`, `range` (`start`, `end`), and
 the requested reports. `--stats` adds `percentileRelativeAccuracy` and `stats`:
 
 ```text
@@ -297,7 +343,8 @@ warnings, selected view, derived rows, and an `rsInfo.members` mapping from
 generic replica-set node labels to real member names. Each row includes grouped
 section objects such as `replication` and `server`; `replication.lagS` contains
 the per-node lag values, `replication.majLagS` contains the majority commit lag,
-and unavailable lag values are `null`.
+and unavailable lag values are `null`. `toolVersion` is the
+mongodb-ftdcstat version that wrote the document.
 
 The JSON document is written as a stream, one row at a time, so the tool's
 memory stays flat (about 20 MB) whatever the capture size; a 13-day capture

@@ -8,6 +8,7 @@ import (
 
 	"mongodb-ftdcstat/internal/derive"
 	"mongodb-ftdcstat/internal/model"
+	"mongodb-ftdcstat/internal/version"
 )
 
 // JSON output is written as a stream: the top-level keys before "rows",
@@ -151,6 +152,7 @@ func (s *JSONStream) Close() error {
 		s.write("\n  ],\n")
 	}
 	s.key("rsInfo", rsInfoForJSON(s.rsInfo), true)
+	s.key("toolVersion", version.String(), true)
 	s.key("view", s.opts.View, true)
 	s.key("warnings", s.warnings, false)
 	s.write("}\n")

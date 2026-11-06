@@ -16,6 +16,7 @@ import (
 	"mongodb-ftdcstat/internal/ftdc"
 	"mongodb-ftdcstat/internal/model"
 	"mongodb-ftdcstat/internal/render"
+	"mongodb-ftdcstat/internal/version"
 	"mongodb-ftdcstat/internal/webui"
 )
 
@@ -527,6 +528,9 @@ func parseArgs(args []string) (cliOptions, error) {
 		case arg == "-h" || arg == "--help":
 			usage(os.Stdout, commandName())
 			os.Exit(0)
+		case arg == "--version":
+			fmt.Fprintln(os.Stdout, version.Long("mongodb-ftdcstat"))
+			os.Exit(0)
 		case arg == "--json":
 			opts.JSON = true
 		case arg == "--web":
@@ -722,6 +726,7 @@ func parseTimeArg(value string) (time.Time, error) {
 func usage(w *os.File, name string) {
 	fmt.Fprintf(w, "usage: %s <path-to-diagnostic-data-directory> [--view server|wt|system|network|repl|summary|io | --columns COL,...] [--avg DURATION] [--stats] [--findings] [--device DEVICE] [--from ISO_TIME] [--to ISO_TIME] [--json] [--web] [--tui] [--listen ADDR] [--verbose] [--pressure]\n", name)
 	fmt.Fprintf(w, "       %s --list-columns [--view VIEW] [--json]\n", name)
+	fmt.Fprintf(w, "       %s --version\n", name)
 }
 
 func printError(w io.Writer, err error) {

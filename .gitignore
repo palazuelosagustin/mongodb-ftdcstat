@@ -14,3 +14,5 @@ rsnode_report
 shard_report
 router_report
 run_reports
+/dist/
+*.test

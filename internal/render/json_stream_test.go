@@ -8,6 +8,7 @@ import (
 
 	"mongodb-ftdcstat/internal/derive"
 	"mongodb-ftdcstat/internal/model"
+	"mongodb-ftdcstat/internal/version"
 )
 
 // encodeWholeDocument is the pre-streaming --json implementation: build the
@@ -22,12 +23,13 @@ func encodeWholeDocument(t *testing.T, metadata model.Metadata, warnings []model
 		items = append(items, rowForJSON(row, layout))
 	}
 	payload := map[string]any{
-		"metadata": MetadataSummary(metadata),
-		"rsInfo":   rsInfoForJSON(rsInfo),
-		"warnings": warnings,
-		"view":     opts.View,
-		"avg":      avgPayload(opts.AvgBucket),
-		"rows":     items,
+		"metadata":    MetadataSummary(metadata),
+		"rsInfo":      rsInfoForJSON(rsInfo),
+		"warnings":    warnings,
+		"view":        opts.View,
+		"toolVersion": version.String(),
+		"avg":         avgPayload(opts.AvgBucket),
+		"rows":        items,
 	}
 	if len(opts.Columns) > 0 {
 		payload["columns"] = opts.Columns
