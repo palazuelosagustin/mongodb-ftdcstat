@@ -6,6 +6,7 @@ One JSON document on stdout. Top-level keys:
 
 | Key | Content |
 |---|---|
+| `toolVersion` | mongodb-ftdcstat version that wrote it (`v0.1.0`, or `dev (commit)` for a source build) |
 | `view` | Selected view (`summary`, `server`, `wt`, `system`, `io`, `network`, `repl`) |
 | `avg` | `{enabled, bucket, datetime}`; with `--avg`, `datetime` is `bucket_start` |
 | `metadata` | Compact summary, same facts as the CLI header: `process`, `host {hostname, os, kernel, arch, cpuCores, memoryMB, maxConnections}`, `build {version, gitVersion, modules, storageEngine, allocator, openssl, perconaFeatures}`, `cmdLineOpts` (flat dotted keys, typed values), `parameters` (`wtCache` + explicit `setParameter`). Missing fields are omitted. Raw FTDC metadata documents are not output |
@@ -67,7 +68,7 @@ omitted, so use `// null` or check with `jq '.metadata | keys'`.
 ## `--stats` / `--findings` with `--json`
 
 A different document: top-level `reports` (`["stats"]`, `["findings"]`, or
-both), `view`, `metadata`, `rsInfo`, `warnings`, `range` (`{start, end}`), and
+both), `toolVersion`, `view`, `metadata`, `rsInfo`, `warnings`, `range` (`{start, end}`), and
 the requested reports.
 
 | Key | Content |

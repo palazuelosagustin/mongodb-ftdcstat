@@ -21,9 +21,12 @@ identifiers are in the capture (`rsInfo`, `hostInfo`, `getCmdLineOpts`).
 
 1. `command -v mongodb-ftdcstat`
 2. Otherwise the repo checkout, e.g. `~/bin/mongodb-ftdcstat/mongodb-ftdcstat`
-3. Otherwise build from the repo root: `go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat`
+3. Otherwise download the latest release: `https://github.com/palazuelosagustin/mongodb-ftdcstat/releases/latest/download/mongodb-ftdcstat_<darwin|linux>_<arm64|amd64>.tar.gz` (see README Install)
+4. Otherwise build from the repo root: `go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat`
 
 If you changed the source in this session, rebuild before running.
+`mongodb-ftdcstat --version` (and `toolVersion` in JSON) names the build; quote
+it with results you save or share.
 
 ## Usage
 

@@ -27,11 +27,13 @@ Use this skill to read, explain, and troubleshoot `mongodb-ftdcstat` output from
 
 `mongodb-ftdcstat` reads a MongoDB FTDC `diagnostic.data` directory. The input is the directory, not an individual `metrics.*` file.
 
-Build from the repository root:
+Use a release binary (README Install; latest release: `https://github.com/palazuelosagustin/mongodb-ftdcstat/releases/latest/download/mongodb-ftdcstat_<darwin|linux>_<arm64|amd64>.tar.gz`), or build from the repository root:
 
 ```bash
 go build -o mongodb-ftdcstat ./cmd/mongodb-ftdcstat
 ```
+
+`mongodb-ftdcstat --version` (and `toolVersion` in JSON) names the build; quote it with results you save or share.
 
 General form:
 

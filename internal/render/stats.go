@@ -12,6 +12,7 @@ import (
 	"mongodb-ftdcstat/internal/derive"
 	"mongodb-ftdcstat/internal/model"
 	"mongodb-ftdcstat/internal/stats"
+	"mongodb-ftdcstat/internal/version"
 )
 
 // StatsCollector accumulates per-column statistics over derived rows for
@@ -413,10 +414,11 @@ func RenderReportsJSON(w io.Writer, metadata model.Metadata, warnings []model.Wa
 	}
 	reports := []string{}
 	payload := map[string]any{
-		"view":     opts.View,
-		"metadata": MetadataSummary(metadata),
-		"rsInfo":   rsInfoForJSON(derive.ReplSetInfoFromMetadata(metadata)),
-		"warnings": warnings,
+		"toolVersion": version.String(),
+		"view":        opts.View,
+		"metadata":    MetadataSummary(metadata),
+		"rsInfo":      rsInfoForJSON(derive.ReplSetInfoFromMetadata(metadata)),
+		"warnings":    warnings,
 		"range": map[string]any{
 			"start": jsonTime(opts.MetricsRange.Start),
 			"end":   jsonTime(opts.MetricsRange.End),
